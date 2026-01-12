@@ -29,7 +29,7 @@ self.addEventListener("push", event => {
 
   const title = data.title || "Schocken";
   const body = data.body || "Du bist am Zug.";
-  const icon = data.icon || "/icon.svg";
+  const icon = data.icon || "/icon.png";
 
   event.waitUntil(
     self.registration.showNotification(title, { body, icon, badge: icon })
