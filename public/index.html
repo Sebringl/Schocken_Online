@@ -74,7 +74,7 @@
       <hr />
       <label class="toggle-row">
         <input type="checkbox" id="deckelToggle" />
-        <span>Mit Deckeln spielen (nur beim Erstellen)</span>
+        <span>Mit Deckeln spielen</span>
       </label>
 
       <div class="lobby-list" id="activeLobbies">
@@ -89,6 +89,9 @@
         <div class="playerList" id="pendingList"></div>
         <div id="hostControls" style="display:none; margin-top: 10px;">
           <button id="btnStartGame">Spiel starten</button>
+        </div>
+        <div id="leaveLobbyWrap" style="display:none; margin-top: 10px;">
+          <button id="btnLeaveLobby">Lobby verlassen</button>
         </div>
         <div class="small" id="hostStartHint">Nur der Host kann das Spiel starten.</div>
       </div>
@@ -286,12 +289,17 @@
       html += "</ul>";
       document.getElementById("playerList").innerHTML = html;
 
-      document.getElementById("hostControls").style.display = isHost ? "block" : "none";
+      document.getElementById("hostControls").style.display =
+        isHost && room.status === "lobby" ? "block" : "none";
+      document.getElementById("leaveLobbyWrap").style.display =
+        room.status === "lobby" ? "block" : "none";
       const hint = document.getElementById("hostStartHint");
       if (hint) {
         hint.textContent = isHost ? "Nur du kannst das Spiel starten." : "Nur der Host kann das Spiel starten.";
       }
       renderPendingList([]);
+      updateDeckelToggleState();
+      updateLobbyVisibility();
     }
 
     function renderPendingList(requests) {
@@ -331,6 +339,12 @@
 
     function renderLobbyList(lobbies) {
       const container = document.getElementById("activeLobbies");
+      if (room && room.status === "lobby") {
+        container.style.display = "none";
+        container.innerHTML = "";
+        return;
+      }
+      container.style.display = "block";
       if (!lobbies || lobbies.length === 0) {
         container.innerHTML = "<div class='small muted'>Keine aktiven Lobbys gefunden.</div>";
         return;
@@ -463,6 +477,8 @@
       document.getElementById("turnHint").textContent =
         myTurn ? "Du bist am Zug!" : "Du bist gerade nicht am Zug (Zuschauer-Modus).";
       document.getElementById("backToLobbyWrap").style.display = isHost ? "block" : "none";
+      updateDeckelToggleState();
+      updateLobbyVisibility();
 
       const myTurnNow = myTurn;
       if (myTurnNow && !wasMyTurn) {
@@ -529,11 +545,24 @@
         renderGame();
       } else {
         setView("lobby");
+        updateLobbyVisibility();
       }
     });
 
     socket.on("room_update", (payloadRoom) => {
       room = payloadRoom;
+      if (room && typeof room.hostSeat === "number" && myName) {
+        if (room.status === "lobby") {
+          const idx = room.players.findIndex(p => p.name.toLowerCase() === myName.toLowerCase());
+          if (idx >= 0) {
+            mySeat = idx;
+            localStorage.setItem("schocken_seat", String(mySeat));
+          }
+        }
+        if (mySeat >= 0) {
+          isHost = room.hostSeat === mySeat;
+        }
+      }
       renderRoomView();
     });
 
@@ -595,7 +624,25 @@
       setView("lobby");
       document.body.style.backgroundColor = "";
       wasMyTurn = false;
+      showLobbyError(isHost ? "" : (message || ""));
+      updateLobbyVisibility();
+    });
+
+    socket.on("room_left", ({ message } = {}) => {
+      room = null;
+      state = null;
+      myRoomCode = null;
+      myToken = null;
+      mySeat = -1;
+      isHost = false;
+      localStorage.removeItem("schocken_code");
+      localStorage.removeItem("schocken_token");
+      localStorage.removeItem("schocken_seat");
+      setView("lobby");
       showLobbyError(message || "");
+      updateDeckelToggleState();
+      updateLobbyVisibility();
+      socket.emit("get_lobby_list");
     });
 
     // ---- Buttons ----
@@ -618,6 +665,16 @@
     document.getElementById("btnStartGame").onclick = () => {
       if (!room || !myToken) return;
       socket.emit("start_game", { code: room.code, token: myToken });
+    };
+
+    document.getElementById("btnLeaveLobby").onclick = () => {
+      if (!room || !myToken) return;
+      if (room.status !== "lobby") return;
+      const confirmText = isHost
+        ? "Lobby verlassen? Du gibst den Host-Status ab."
+        : "Lobby verlassen?";
+      if (!window.confirm(confirmText)) return;
+      socket.emit("leave_room", { code: room.code, token: myToken });
     };
 
     document.getElementById("rollBtn").onclick = () => {
@@ -659,6 +716,19 @@
       setSuggestedCode();
     };
 
+    document.getElementById("deckelToggle").onchange = (event) => {
+      if (!room || !myToken) return;
+      if (!isHost || room.status !== "lobby") {
+        event.target.checked = !!room?.settings?.useDeckel;
+        return;
+      }
+      socket.emit("update_room_settings", {
+        code: room.code,
+        token: myToken,
+        useDeckel: event.target.checked
+      });
+    };
+
     window.onload = () => {
       setSuggestedCode();
       if (myName) {
@@ -693,6 +763,26 @@
         socket.emit("get_lobby_list");
       }
     });
+
+    function updateDeckelToggleState() {
+      const toggle = document.getElementById("deckelToggle");
+      if (!toggle) return;
+      if (room && room.status === "lobby") {
+        toggle.checked = !!room.settings?.useDeckel;
+      }
+      toggle.disabled = !!room && (!isHost || room.status !== "lobby");
+    }
+
+    function updateLobbyVisibility() {
+      const inLobby = !!room && room.status === "lobby";
+      const list = document.getElementById("activeLobbies");
+      if (list) {
+        list.style.display = inLobby ? "none" : "block";
+      }
+      if (!inLobby && list && list.innerHTML.trim() === "") {
+        list.innerHTML = "<div class='small muted'>Aktive Lobbys werden geladen…</div>";
+      }
+    }
   </script>
 </body>
 </html>

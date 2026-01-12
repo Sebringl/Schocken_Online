@@ -357,6 +357,24 @@ function emitPendingRequests(room) {
   }
 }
 
+function updateRoomSettings({ room, useDeckel }) {
+  room.settings.useDeckel = !!useDeckel;
+}
+
+function removePlayerFromRoom({ room, seatIndex }) {
+  const [removed] = room.players.splice(seatIndex, 1);
+  if (seatIndex < room.hostSeat) {
+    room.hostSeat -= 1;
+  }
+  if (removed && removed.token === room.hostToken) {
+    if (room.players.length > 0) {
+      room.hostSeat = 0;
+      room.hostToken = room.players[0].token;
+    }
+  }
+  return removed;
+}
+
 function handleJoinRequest(socket, { code, name }) {
   const room = rooms.get(normalizeCode(code));
   if (!room) return socket.emit("error_msg", { message: "Room-Code nicht gefunden." });
@@ -665,6 +683,41 @@ io.on("connection", (socket) => {
 
     io.to(room.code).emit("room_update", safeRoom(room));
     io.to(room.code).emit("state_update", room.state);
+    emitLobbyList();
+    persistRooms();
+  });
+
+  socket.on("update_room_settings", ({ code, token, useDeckel }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room) return;
+    if (room.hostToken !== token) return socket.emit("error_msg", { message: "Nur der Host kann Einstellungen ändern." });
+    if (room.status !== "lobby") return socket.emit("error_msg", { message: "Spiel läuft bereits." });
+
+    updateRoomSettings({ room, useDeckel });
+    io.to(room.code).emit("room_update", safeRoom(room));
+    emitLobbyList();
+    persistRooms();
+  });
+
+  socket.on("leave_room", ({ code, token }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room) return socket.emit("error_msg", { message: "Room-Code nicht gefunden." });
+    if (room.status !== "lobby") return socket.emit("error_msg", { message: "Spiel läuft bereits." });
+
+    const seatIndex = room.players.findIndex(p => p.token === token);
+    if (seatIndex < 0) return socket.emit("error_msg", { message: "Spieler nicht gefunden." });
+
+    removePlayerFromRoom({ room, seatIndex });
+    socket.leave(room.code);
+    socket.data.roomCode = null;
+    socket.emit("room_left", { message: "Lobby verlassen." });
+
+    if (room.players.length === 0) {
+      rooms.delete(room.code);
+    } else {
+      io.to(room.code).emit("room_update", safeRoom(room));
+      emitPendingRequests(room);
+    }
     emitLobbyList();
     persistRooms();
   });
