@@ -82,6 +82,19 @@
       </label>
 
       <hr />
+      <h3>Spiel beitreten oder erstellen</h3>
+      <div class="small">Name eingeben, Code wählen und loslegen (bei bestehender Lobby bestätigt der Host).</div>
+      <input id="playerName" class="text-input centered" type="text" placeholder="Dein Name" />
+      <div class="code-input-row">
+        <input id="roomCode" class="text-input" type="text" placeholder="Room-Code (z.B. K7F3Q)" />
+        <button id="btnNewCode" class="icon-btn" title="Neuen Code erzeugen" aria-label="Neuen Code erzeugen">
+          <span>🔄</span>
+        </button>
+      </div>
+      <button id="btnEnter" class="centered">Los!</button>
+      <div id="joinStatus" class="small muted"></div>
+
+      <hr />
       <div id="roomView" style="display:none;">
         <h3>Room</h3>
         <div class="codeBig" id="roomCodeBig">------</div>
