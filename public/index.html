@@ -38,8 +38,7 @@
     .lobby-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #eee; border-radius: 10px; padding: 10px; margin: 8px 0; }
     .lobby-item button { width: auto; min-width: 140px; height: 44px; font-size: 16px; margin: 0; }
     .muted { opacity: 0.7; }
-    .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .header-row button { width: auto; height: 40px; font-size: 16px; margin: 0; }
+    .centered { display: block; margin-left: auto; margin-right: auto; }
     footer { margin-top: 24px; font-size: 14px; color: #555; }
     .impressum-link { display: inline-block; margin-top: 20px; font-size: 14px; color: #555; }
   </style>
@@ -49,10 +48,7 @@
 
   <div id="lobby">
     <div id="lobbyCard">
-      <div class="header-row">
-        <h2>Lobby</h2>
-        <button id="btnReload">Reload</button>
-      </div>
+      <h2>Lobby</h2>
 
       <hr />
       <div id="rejoinBox" style="display:none;">
@@ -63,11 +59,16 @@
       </div>
 
       <hr />
-      <h3>Spiel beitreten</h3>
-      <div class="small">Der Host muss den Beitritt bestätigen.</div>
-      <input id="joinName" type="text" placeholder="Dein Name" />
-      <input id="joinCode" type="text" placeholder="Room-Code (z.B. K7F3Q9)" />
-      <button id="btnJoin">Beitritt anfragen</button>
+      <h3>Spiel beitreten oder erstellen</h3>
+      <div class="small">Name eingeben, Code wählen und loslegen (bei bestehender Lobby bestätigt der Host).</div>
+      <input id="playerName" class="text-input centered" type="text" placeholder="Dein Name" />
+      <div class="code-input-row">
+        <input id="roomCode" class="text-input" type="text" placeholder="Room-Code (z.B. K7F3Q)" />
+        <button id="btnNewCode" class="icon-btn" title="Neuen Code erzeugen" aria-label="Neuen Code erzeugen">
+          <span>🔄</span>
+        </button>
+      </div>
+      <button id="btnEnter" class="centered">Los!</button>
       <div id="joinStatus" class="small muted"></div>
 
       <div class="lobby-list" id="activeLobbies">
@@ -75,12 +76,10 @@
       </div>
 
       <hr />
-      <div id="rejoinBox" style="display:none;">
-        <h3>Wieder beitreten</h3>
-        <div class="small">Wir haben ein gespeichertes Room-Login gefunden.</div>
-        <button id="btnRejoin">Wieder beitreten</button>
-        <button id="btnForget">Vergessen</button>
-      </div>
+      <label class="toggle-row">
+        <input type="checkbox" id="deckelToggle" />
+        <span>Mit Deckeln spielen (nur beim Erstellen)</span>
+      </label>
 
       <hr />
       <h3>Spiel beitreten oder erstellen</h3>
@@ -135,6 +134,7 @@
 
     <div style="margin-top: 14px;">
       <button id="btnBackToLobby">Zurück zur Lobby</button>
+      <div class="small">Beendet das Spiel und löscht den Fortschritt.</div>
     </div>
   </div>
 
@@ -349,13 +349,14 @@
       container.innerHTML = html;
       container.querySelectorAll("button[data-join]").forEach(btn => {
         btn.onclick = () => {
-          const name = document.getElementById("joinName").value.trim();
+          const name = getPlayerName();
           const code = btn.dataset.join;
           if (!name) return showLobbyError("Bitte Name eingeben.");
           showLobbyError("");
           showJoinStatus(`Beitritt für ${code} angefragt…`);
           joinPending = { code };
-          socket.emit("request_join", { name, code });
+          document.getElementById("roomCode").value = code;
+          socket.emit("enter_room", { name, requestedCode: code, useDeckel: document.getElementById("deckelToggle").checked });
         };
       });
     }
@@ -602,18 +603,14 @@
       const code = document.getElementById("roomCode").value.trim().toUpperCase();
       const useDeckel = document.getElementById("deckelToggle").checked;
       if (!name) return showLobbyError("Bitte Name eingeben.");
-      socket.emit("create_room", { name, useDeckel, requestedCode });
-    };
-
-    document.getElementById("btnJoin").onclick = () => {
-      const name = document.getElementById("joinName").value.trim();
-      const code = document.getElementById("joinCode").value.trim().toUpperCase();
-      if (!name) return showLobbyError("Bitte Name eingeben.");
-      if (!code) return showLobbyError("Bitte Room-Code eingeben.");
       showLobbyError("");
-      showJoinStatus(`Beitritt für ${code} angefragt…`);
-      joinPending = { code };
-      socket.emit("request_join", { name, code });
+      if (code) {
+        showJoinStatus(`Beitritt für ${code} angefragt…`);
+        joinPending = { code };
+      } else {
+        showJoinStatus("Erstelle neue Lobby…");
+      }
+      socket.emit("enter_room", { name, requestedCode: code, useDeckel });
     };
 
     document.getElementById("btnStartGame").onclick = () => {
@@ -633,7 +630,10 @@
 
     document.getElementById("btnBackToLobby").onclick = () => {
       if (isHost && room && myToken) {
-        socket.emit("return_lobby", { code: room.code, token: myToken });
+        const ok = window.confirm("Zurück zur Lobby? Das beendet das Spiel und löscht den Fortschritt.");
+        if (ok) {
+          socket.emit("return_lobby", { code: room.code, token: myToken });
+        }
         return;
       }
       showLobbyError("Nur der Host kann alle zurück in die Lobby schicken.");
