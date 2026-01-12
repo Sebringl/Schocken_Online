@@ -238,7 +238,7 @@
       }
     }
 
-    async function notifyJoinRequest(playerName, code) {
+    async function notifyJoinRequest(playerName, code, requestId) {
       if (!("Notification" in window)) return;
       if (Notification.permission === "denied") return;
 
@@ -260,7 +260,12 @@
           await reg.showNotification(title, {
             body,
             icon: "/icon.png",
-            badge: "/icon.png"
+            badge: "/icon.png",
+            data: { code, requestId },
+            actions: [
+              { action: "approve", title: "Annehmen" },
+              { action: "deny", title: "Ablehnen" }
+            ]
           });
           return;
         } catch (err) {
@@ -282,9 +287,10 @@
 
       const list = room.players || [];
       let html = "<h4>Spieler</h4><ul>";
-      list.forEach(p => {
+      list.forEach((p, index) => {
         const connected = p.connected ? `<span class="pill ok">online</span>` : `<span class="pill bad">offline</span>`;
-        html += `<li>${escapeHtml(p.name)} ${connected}</li>`;
+        const hostBadge = index === room.hostSeat ? `<span class="pill ok">Host</span>` : "";
+        html += `<li>${escapeHtml(p.name)} ${connected} ${hostBadge}</li>`;
       });
       html += "</ul>";
       document.getElementById("playerList").innerHTML = html;
@@ -585,8 +591,8 @@
       renderPendingList(requests);
     });
 
-    socket.on("join_request_notice", ({ name, code }) => {
-      notifyJoinRequest(name, code);
+    socket.on("join_request_notice", ({ name, code, requestId }) => {
+      notifyJoinRequest(name, code, requestId);
     });
 
     socket.on("state_update", (payloadState) => {
@@ -744,6 +750,23 @@
       startKeepalive();
     };
 
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", event => {
+        const data = event.data || {};
+        if (data.type !== "join_request_action") return;
+        if (!room || !myToken || !isHost || room.status !== "lobby") return;
+        if (data.code !== room.code) return;
+        const accept = data.action === "approve";
+        if (!data.requestId) return;
+        socket.emit("approve_join", {
+          code: data.code,
+          token: myToken,
+          requestId: data.requestId,
+          accept
+        });
+      });
+    }
+
     document.getElementById("btnReload").onclick = () => {
       window.location.reload();
     };
@@ -776,6 +799,10 @@
     function updateLobbyVisibility() {
       const inLobby = !!room && room.status === "lobby";
       const list = document.getElementById("activeLobbies");
+      const roomView = document.getElementById("roomView");
+      if (roomView) {
+        roomView.style.display = inLobby ? "block" : "none";
+      }
       if (list) {
         list.style.display = inLobby ? "none" : "block";
       }

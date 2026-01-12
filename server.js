@@ -368,8 +368,9 @@ function removePlayerFromRoom({ room, seatIndex }) {
   }
   if (removed && removed.token === room.hostToken) {
     if (room.players.length > 0) {
-      room.hostSeat = 0;
-      room.hostToken = room.players[0].token;
+      const nextHostIndex = Math.floor(Math.random() * room.players.length);
+      room.hostSeat = nextHostIndex;
+      room.hostToken = room.players[nextHostIndex].token;
     }
   }
   return removed;
@@ -401,7 +402,11 @@ function handleJoinRequest(socket, { code, name }) {
   socket.emit("join_pending", { code: room.code });
   const host = room.players[room.hostSeat];
   if (host?.socketId) {
-    io.to(host.socketId).emit("join_request_notice", { name: cleanName, code: room.code });
+    io.to(host.socketId).emit("join_request_notice", {
+      name: cleanName,
+      code: room.code,
+      requestId: request.id
+    });
   }
   emitPendingRequests(room);
 }

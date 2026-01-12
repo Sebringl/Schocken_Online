@@ -7,9 +7,21 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("notificationclick", event => {
+  const action = event.action;
+  const data = event.notification?.data || {};
   event.notification.close();
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => {
+      if (action && data?.requestId && data?.code) {
+        clients.forEach(client => {
+          client.postMessage({
+            type: "join_request_action",
+            action,
+            requestId: data.requestId,
+            code: data.code
+          });
+        });
+      }
       for (const client of clients) {
         if ("focus" in client) return client.focus();
       }
