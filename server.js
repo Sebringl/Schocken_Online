@@ -53,6 +53,7 @@ function rollDie() {
 // ---- Game State ----
 function createInitialState({ useDeckel }) {
   return {
+    gameType: "schocken",
     useDeckel: !!useDeckel,
 
     players: [],              // names, index = seat
@@ -86,6 +87,38 @@ function createInitialState({ useDeckel }) {
   };
 }
 
+const KNIFFEL_CATEGORIES = [
+  "ones",
+  "twos",
+  "threes",
+  "fours",
+  "fives",
+  "sixes",
+  "threeKind",
+  "fourKind",
+  "fullHouse",
+  "smallStraight",
+  "largeStraight",
+  "yahtzee",
+  "chance"
+];
+
+function createKniffelState() {
+  return {
+    gameType: "kniffel",
+    players: [],
+    currentPlayer: 0,
+    throwCount: 0,
+    maxThrowsThisRound: 3,
+    dice: [null, null, null, null, null],
+    held: [false, false, false, false, false],
+    scorecard: [],
+    totals: [],
+    message: "",
+    finished: false
+  };
+}
+
 function resetTurn(state) {
   state.throwCount = 0;
   state.dice = [null, null, null];
@@ -108,6 +141,41 @@ function applyManualSixRule(state) {
   }
   state.maxConvertibleThisTurn = (freshSixes.length === 3) ? 2 : 1;
   for (const i of freshSixes) state.convertible[i] = true;
+}
+
+function resetKniffelTurn(state) {
+  state.throwCount = 0;
+  state.dice = [null, null, null, null, null];
+  state.held = [false, false, false, false, false];
+}
+
+function scoreKniffel(dice, category) {
+  const counts = [0, 0, 0, 0, 0, 0];
+  dice.forEach(d => { counts[d - 1]++; });
+  const sum = dice.reduce((acc, val) => acc + val, 0);
+  const hasN = n => counts.some(c => c >= n);
+  const hasExact = (a, b) => counts.includes(a) && counts.includes(b);
+  const unique = new Set(dice);
+  const hasStraight = (seq) => seq.every(n => unique.has(n));
+
+  switch (category) {
+    case "ones": return { score: counts[0] * 1, label: "Einer" };
+    case "twos": return { score: counts[1] * 2, label: "Zweier" };
+    case "threes": return { score: counts[2] * 3, label: "Dreier" };
+    case "fours": return { score: counts[3] * 4, label: "Vierer" };
+    case "fives": return { score: counts[4] * 5, label: "Fünfer" };
+    case "sixes": return { score: counts[5] * 6, label: "Sechser" };
+    case "threeKind": return { score: hasN(3) ? sum : 0, label: "Dreierpasch" };
+    case "fourKind": return { score: hasN(4) ? sum : 0, label: "Viererpasch" };
+    case "fullHouse": return { score: hasExact(3, 2) ? 25 : 0, label: "Full House" };
+    case "smallStraight":
+      return { score: (hasStraight([1, 2, 3, 4]) || hasStraight([2, 3, 4, 5]) || hasStraight([3, 4, 5, 6])) ? 30 : 0, label: "Kleine Straße" };
+    case "largeStraight":
+      return { score: (hasStraight([1, 2, 3, 4, 5]) || hasStraight([2, 3, 4, 5, 6])) ? 40 : 0, label: "Große Straße" };
+    case "yahtzee": return { score: hasN(5) ? 50 : 0, label: "Kniffel" };
+    case "chance": return { score: sum, label: "Chance" };
+    default: return { score: 0, label: "Unbekannt" };
+  }
 }
 
 function rateRoll(dice, throws, playerIndex) {
@@ -266,26 +334,39 @@ function prepareNextRound(state) {
 }
 
 function startNewGame(room) {
-  const state = createInitialState({ useDeckel: room.settings.useDeckel });
-  state.players = room.players.map(p => p.name);
-
-  state.scores = state.players.map(_ => ({ tier: null, subvalue: null, throws: 0, label: "" }));
-  state.wins = state.players.map(_ => 0);
-  state.history = [new Array(state.players.length).fill(null)];
-
-  if (state.useDeckel) {
-    state.deckelCount = state.players.map(_ => 0);
-    state.halfLossCount = state.players.map(_ => 0);
+  if (room.settings.gameType === "kniffel") {
+    const state = createKniffelState();
+    state.players = room.players.map(p => p.name);
+    state.scorecard = state.players.map(() => {
+      const card = {};
+      KNIFFEL_CATEGORIES.forEach(cat => { card[cat] = null; });
+      return card;
+    });
+    state.totals = state.players.map(_ => 0);
+    state.currentPlayer = 0;
+    room.state = state;
   } else {
-    state.deckelCount = state.players.map(_ => 0);
-    state.halfLossCount = state.players.map(_ => 0);
+    const state = createInitialState({ useDeckel: room.settings.useDeckel });
+    state.players = room.players.map(p => p.name);
+
+    state.scores = state.players.map(_ => ({ tier: null, subvalue: null, throws: 0, label: "" }));
+    state.wins = state.players.map(_ => 0);
+    state.history = [new Array(state.players.length).fill(null)];
+
+    if (state.useDeckel) {
+      state.deckelCount = state.players.map(_ => 0);
+      state.halfLossCount = state.players.map(_ => 0);
+    } else {
+      state.deckelCount = state.players.map(_ => 0);
+      state.halfLossCount = state.players.map(_ => 0);
+    }
+
+    state.startPlayerIndex = 0;
+    state.playerTurnIndex = 0;
+    state.currentPlayer = 0;
+
+    room.state = state;
   }
-
-  state.startPlayerIndex = 0;
-  state.playerTurnIndex = 0;
-  state.currentPlayer = 0;
-
-  room.state = state;
   room.status = "running";
 }
 
@@ -317,7 +398,8 @@ function getLobbyList() {
       code: room.code,
       hostName: room.players[room.hostSeat]?.name || "Host",
       playerCount: room.players.length,
-      useDeckel: !!room.settings.useDeckel
+      useDeckel: !!room.settings.useDeckel,
+      gameType: room.settings.gameType || "schocken"
     }));
 }
 
@@ -425,8 +507,10 @@ function emitPendingRequests(room) {
   }
 }
 
-function updateRoomSettings({ room, useDeckel }) {
-  room.settings.useDeckel = !!useDeckel;
+function updateRoomSettings({ room, useDeckel, gameType }) {
+  const nextGameType = gameType === "kniffel" ? "kniffel" : "schocken";
+  room.settings.gameType = nextGameType;
+  room.settings.useDeckel = nextGameType === "schocken" ? !!useDeckel : false;
 }
 
 function removePlayerFromRoom({ room, seatIndex }) {
@@ -533,7 +617,7 @@ function createRoom({ socket, name, useDeckel, requestedCode }) {
   const room = {
     code,
     status: "lobby",
-    settings: { useDeckel: !!useDeckel },
+    settings: { useDeckel: !!useDeckel, gameType: "schocken" },
     hostToken: token,
     hostSeat: 0,
     lastLobbyActivity: Date.now(),
@@ -600,6 +684,10 @@ async function loadRooms() {
       rooms.set(normalizedCode, {
         ...room,
         code: normalizedCode,
+        settings: {
+          useDeckel: !!room.settings?.useDeckel,
+          gameType: room.settings?.gameType === "kniffel" ? "kniffel" : "schocken"
+        },
         lastLobbyActivity: room.lastLobbyActivity || Date.now(),
         lobbyWarnedAt: null,
         players: (room.players || []).map(p => ({
@@ -771,13 +859,13 @@ io.on("connection", (socket) => {
     persistRooms();
   });
 
-  socket.on("update_room_settings", ({ code, token, useDeckel }) => {
+  socket.on("update_room_settings", ({ code, token, useDeckel, gameType }) => {
     const room = rooms.get(normalizeCode(code));
     if (!room) return;
     if (room.hostToken !== token) return socket.emit("error_msg", { message: "Nur der Host kann Einstellungen ändern." });
     if (room.status !== "lobby") return socket.emit("error_msg", { message: "Spiel läuft bereits." });
 
-    updateRoomSettings({ room, useDeckel });
+    updateRoomSettings({ room, useDeckel, gameType });
     io.to(room.code).emit("room_update", safeRoom(room));
     emitLobbyList();
     persistRooms();
@@ -845,6 +933,22 @@ io.on("connection", (socket) => {
 
     const state = room.state;
 
+    if (state.gameType === "kniffel") {
+      if (state.finished) {
+        return socket.emit("error_msg", { message: "Spiel ist beendet." });
+      }
+      if (state.throwCount >= state.maxThrowsThisRound) {
+        return socket.emit("error_msg", { message: "Keine Würfe mehr übrig." });
+      }
+      for (let i = 0; i < 5; i++) {
+        if (!state.held[i]) state.dice[i] = rollDie();
+      }
+      state.throwCount++;
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
+
     if (state.throwCount >= state.maxThrowsThisRound) {
       return socket.emit("error_msg", { message: "Keine Würfe mehr übrig." });
     }
@@ -872,6 +976,16 @@ io.on("connection", (socket) => {
 
     const state = room.state;
     const i = Number(index);
+    if (state.gameType === "kniffel") {
+      if (![0, 1, 2, 3, 4].includes(i)) return;
+      if (state.finished) return socket.emit("error_msg", { message: "Spiel ist beendet." });
+      if (state.dice[i] === null) return socket.emit("error_msg", { message: "Bitte zuerst würfeln." });
+      state.held[i] = !state.held[i];
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
+
     if (![0, 1, 2].includes(i)) return;
 
     if (state.dice[i] === null) return socket.emit("error_msg", { message: "Bitte zuerst würfeln." });
@@ -906,7 +1020,7 @@ io.on("connection", (socket) => {
     persistRooms();
   });
 
-  socket.on("action_end_turn", ({ code }) => {
+  socket.on("action_end_turn", ({ code, category }) => {
     const room = rooms.get(normalizeCode(code));
     if (!room || room.status !== "running") return;
 
@@ -914,6 +1028,43 @@ io.on("connection", (socket) => {
     if (!check.ok) return socket.emit("error_msg", { message: check.error });
 
     const state = room.state;
+
+    if (state.gameType === "kniffel") {
+      if (state.finished) {
+        return socket.emit("error_msg", { message: "Spiel ist beendet." });
+      }
+      if (state.throwCount === 0 || state.dice.includes(null)) {
+        return socket.emit("error_msg", { message: "Bitte mindestens einmal würfeln, bevor du beendest." });
+      }
+      if (!KNIFFEL_CATEGORIES.includes(category)) {
+        return socket.emit("error_msg", { message: "Bitte eine Kategorie wählen." });
+      }
+      const card = state.scorecard[state.currentPlayer];
+      if (!card || card[category] !== null) {
+        return socket.emit("error_msg", { message: "Kategorie bereits gewählt." });
+      }
+      const scored = scoreKniffel(state.dice, category);
+      card[category] = scored.score;
+      state.totals[state.currentPlayer] = Object.values(card).reduce((acc, val) => acc + (val || 0), 0);
+      state.message = `${state.players[state.currentPlayer]} wählt ${scored.label}: ${scored.score} Punkte.`;
+
+      const allDone = state.scorecard.every(sc => KNIFFEL_CATEGORIES.every(cat => sc[cat] !== null));
+      if (allDone) {
+        state.finished = true;
+        const maxScore = Math.max(...state.totals);
+        const winners = state.players.filter((_, i) => state.totals[i] === maxScore);
+        state.message = `Kniffel beendet. Gewinner: ${winners.join(", ")} (${maxScore} Punkte).`;
+        io.to(room.code).emit("state_update", state);
+        persistRooms();
+        return;
+      }
+
+      state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+      resetKniffelTurn(state);
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
 
     if (state.throwCount === 0 || state.dice.includes(null)) {
       return socket.emit("error_msg", { message: "Bitte mindestens einmal würfeln, bevor du beendest." });
