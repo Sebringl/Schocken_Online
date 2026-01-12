@@ -19,6 +19,9 @@ const io = new Server(server, {
   cors: { origin: "*" }
 });
 
+const LOBBY_INACTIVITY_MS = 120 * 1000;
+const LOBBY_WARNING_MS = 30 * 1000;
+
 // In-Memory Rooms (persisted to disk)
 const rooms = new Map(); // code -> room
 const ROOMS_FILE = "./rooms.json";
@@ -306,6 +309,8 @@ function safeRoom(room) {
 }
 
 function getLobbyList() {
+  cleanupInactiveLobbies({ emit: false });
+  cleanupEmptyLobbies();
   return [...rooms.values()]
     .filter(room => room.status === "lobby")
     .map(room => ({
@@ -318,6 +323,69 @@ function getLobbyList() {
 
 function emitLobbyList() {
   io.emit("lobby_list", { lobbies: getLobbyList() });
+}
+
+function cleanupEmptyLobbies() {
+  let removed = false;
+  for (const room of rooms.values()) {
+    if (room.status !== "lobby") continue;
+    const hasConnectedPlayer = room.players.some(player => player.connected);
+    if (!hasConnectedPlayer) {
+      rooms.delete(room.code);
+      removed = true;
+    }
+  }
+  if (removed) {
+    persistRooms();
+  }
+}
+
+function markLobbyActivity(room) {
+  room.lastLobbyActivity = Date.now();
+  room.lobbyWarnedAt = null;
+}
+
+function warnLobbyExpiry(room, secondsLeft) {
+  if (room.lobbyWarnedAt) return;
+  room.lobbyWarnedAt = Date.now();
+  io.to(room.code).emit("lobby_expiring", {
+    code: room.code,
+    secondsLeft
+  });
+}
+
+function deleteExpiredLobby(room) {
+  io.to(room.code).emit("lobby_deleted", {
+    code: room.code,
+    message: "Lobby wurde wegen Inaktivität gelöscht."
+  });
+  rooms.delete(room.code);
+}
+
+function cleanupInactiveLobbies({ emit = true } = {}) {
+  let removed = false;
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    if (room.status !== "lobby") continue;
+    const lastActivity = room.lastLobbyActivity || now;
+    const elapsed = now - lastActivity;
+    const remaining = LOBBY_INACTIVITY_MS - elapsed;
+    const hasConnectedPlayer = room.players.some(player => player.connected);
+    if (remaining <= 0) {
+      deleteExpiredLobby(room);
+      removed = true;
+      continue;
+    }
+    if (hasConnectedPlayer && remaining <= LOBBY_WARNING_MS) {
+      warnLobbyExpiry(room, Math.max(1, Math.ceil(remaining / 1000)));
+    }
+  }
+  if (removed) {
+    if (emit) {
+      emitLobbyList();
+    }
+    persistRooms();
+  }
 }
 
 function getSocketRoom(socket) {
@@ -468,6 +536,8 @@ function createRoom({ socket, name, useDeckel, requestedCode }) {
     settings: { useDeckel: !!useDeckel },
     hostToken: token,
     hostSeat: 0,
+    lastLobbyActivity: Date.now(),
+    lobbyWarnedAt: null,
     players: [
       { token, socketId: socket.id, name, connected: true }
     ],
@@ -503,6 +573,7 @@ async function persistRooms() {
     settings: room.settings,
     hostToken: room.hostToken,
     hostSeat: room.hostSeat,
+    lastLobbyActivity: room.lastLobbyActivity || null,
     players: room.players.map(p => ({
       token: p.token,
       name: p.name,
@@ -529,6 +600,8 @@ async function loadRooms() {
       rooms.set(normalizedCode, {
         ...room,
         code: normalizedCode,
+        lastLobbyActivity: room.lastLobbyActivity || Date.now(),
+        lobbyWarnedAt: null,
         players: (room.players || []).map(p => ({
           ...p,
           connected: false,
@@ -545,6 +618,10 @@ async function loadRooms() {
 }
 
 loadRooms();
+
+setInterval(() => {
+  cleanupInactiveLobbies();
+}, 5000);
 
 // ---- Socket.IO ----
 io.on("connection", (socket) => {
@@ -625,6 +702,7 @@ io.on("connection", (socket) => {
       name: request.name,
       connected: true
     });
+    markLobbyActivity(room);
 
     targetSocket.join(room.code);
     targetSocket.data.roomCode = room.code;
@@ -685,6 +763,7 @@ io.on("connection", (socket) => {
     if (room.players.length < 2) return socket.emit("error_msg", { message: "Mindestens 2 Spieler nötig." });
 
     startNewGame(room);
+    room.lobbyWarnedAt = null;
 
     io.to(room.code).emit("room_update", safeRoom(room));
     io.to(room.code).emit("state_update", room.state);
@@ -734,9 +813,25 @@ io.on("connection", (socket) => {
 
     room.status = "lobby";
     room.state = null;
+    markLobbyActivity(room);
     io.to(room.code).emit("lobby_returned", { message: "Zurück in der Lobby." });
     io.to(room.code).emit("room_update", safeRoom(room));
     emitPendingRequests(room);
+    emitLobbyList();
+    persistRooms();
+  });
+
+  socket.on("keep_lobby", ({ code, token }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room) return;
+    if (room.status !== "lobby") return;
+    const isMember = room.players.some(player => player.token === token);
+    if (!isMember) return;
+    markLobbyActivity(room);
+    io.to(room.code).emit("lobby_keep_confirmed", {
+      code: room.code,
+      message: "Lobby bleibt bestehen."
+    });
     emitLobbyList();
     persistRooms();
   });

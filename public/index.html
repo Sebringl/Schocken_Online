@@ -28,6 +28,7 @@
     .pill { display:inline-block; padding: 4px 10px; border-radius: 999px; border: 1px solid #ddd; font-size: 13px; margin-left: 8px; }
     .ok { background: #eaffea; }
     .bad { background: #ffe5e5; }
+    .neutral { background: #f0f0f0; }
     .toggle-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 10px 12px; border: 1px solid #eee; border-radius: 10px; background: #fafafa; }
     .toggle-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
     .code-input-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
@@ -92,6 +93,10 @@
         </div>
         <div id="leaveLobbyWrap" style="display:none; margin-top: 10px;">
           <button id="btnLeaveLobby">Lobby verlassen</button>
+        </div>
+        <div id="lobbyExpiryNotice" style="display:none; margin-top: 10px; border: 1px solid #f3c97a; border-radius: 10px; padding: 10px; background: #fff7e6;">
+          <div class="small" id="lobbyExpiryText"></div>
+          <button id="btnKeepLobby" style="width:auto; min-width: 180px; height: 44px; font-size: 16px; margin: 8px 0 0;">Lobby behalten</button>
         </div>
         <div class="small" id="hostStartHint">Nur der Host kann das Spiel starten.</div>
       </div>
@@ -160,6 +165,18 @@
     }
     function showLobbyError(msg) {
       document.getElementById("lobbyError").textContent = msg || "";
+    }
+    function showLobbyExpiryNotice(msg) {
+      const notice = document.getElementById("lobbyExpiryNotice");
+      const text = document.getElementById("lobbyExpiryText");
+      if (!notice || !text) return;
+      if (!msg) {
+        notice.style.display = "none";
+        text.textContent = "";
+        return;
+      }
+      text.textContent = msg;
+      notice.style.display = "block";
     }
     function showJoinStatus(msg) {
       document.getElementById("joinStatus").textContent = msg || "";
@@ -289,7 +306,7 @@
       let html = "<h4>Spieler</h4><ul>";
       list.forEach((p, index) => {
         const connected = p.connected ? `<span class="pill ok">online</span>` : `<span class="pill bad">offline</span>`;
-        const hostBadge = index === room.hostSeat ? `<span class="pill ok">Host</span>` : "";
+        const hostBadge = index === room.hostSeat ? `<span class="pill neutral">Host</span>` : "";
         html += `<li>${escapeHtml(p.name)} ${connected} ${hostBadge}</li>`;
       });
       html += "</ul>";
@@ -306,6 +323,9 @@
       renderPendingList([]);
       updateDeckelToggleState();
       updateLobbyVisibility();
+      if (!room || room.status !== "lobby") {
+        showLobbyExpiryNotice("");
+      }
     }
 
     function renderPendingList(requests) {
@@ -634,6 +654,38 @@
       updateLobbyVisibility();
     });
 
+    socket.on("lobby_expiring", ({ code, secondsLeft }) => {
+      if (!room || room.code !== code || room.status !== "lobby") return;
+      const seconds = Number.isFinite(secondsLeft) ? secondsLeft : 30;
+      showLobbyExpiryNotice(`Diese Lobby wird in ${seconds} Sekunden gelöscht. Klick auf „Lobby behalten“, um sie zu behalten.`);
+    });
+
+    socket.on("lobby_keep_confirmed", ({ code, message }) => {
+      if (!room || room.code !== code) return;
+      showLobbyExpiryNotice(message || "Lobby bleibt bestehen.");
+      setTimeout(() => {
+        showLobbyExpiryNotice("");
+      }, 2000);
+    });
+
+    socket.on("lobby_deleted", ({ code, message } = {}) => {
+      if (!room || room.code !== code) return;
+      room = null;
+      state = null;
+      myRoomCode = null;
+      myToken = null;
+      mySeat = -1;
+      isHost = false;
+      localStorage.removeItem("schocken_code");
+      localStorage.removeItem("schocken_token");
+      localStorage.removeItem("schocken_seat");
+      setView("lobby");
+      showLobbyError(message || "Lobby wurde gelöscht.");
+      updateDeckelToggleState();
+      updateLobbyVisibility();
+      socket.emit("get_lobby_list");
+    });
+
     socket.on("room_left", ({ message } = {}) => {
       room = null;
       state = null;
@@ -683,6 +735,11 @@
       socket.emit("leave_room", { code: room.code, token: myToken });
     };
 
+    document.getElementById("btnKeepLobby").onclick = () => {
+      if (!room || !myToken || room.status !== "lobby") return;
+      socket.emit("keep_lobby", { code: room.code, token: myToken });
+    };
+
     document.getElementById("rollBtn").onclick = () => {
       if (!room) return;
       socket.emit("action_roll", { code: room.code });
@@ -714,8 +771,16 @@
       localStorage.removeItem("schocken_token");
       localStorage.removeItem("schocken_seat");
       myRoomCode = null; myToken = null; mySeat = -1;
+      room = null;
+      state = null;
+      isHost = false;
+      joinPending = null;
+      showLobbyExpiryNotice("");
       document.getElementById("rejoinBox").style.display = "none";
       showLobbyError("Vergessen. Du kannst neu erstellen oder beitreten.");
+      updateDeckelToggleState();
+      updateLobbyVisibility();
+      socket.emit("get_lobby_list");
     };
 
     document.getElementById("btnNewCode").onclick = () => {
@@ -802,6 +867,9 @@
       const roomView = document.getElementById("roomView");
       if (roomView) {
         roomView.style.display = inLobby ? "block" : "none";
+      }
+      if (!inLobby) {
+        showLobbyExpiryNotice("");
       }
       if (list) {
         list.style.display = inLobby ? "none" : "block";
