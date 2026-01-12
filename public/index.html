@@ -45,6 +45,10 @@
     .centered { display: block; margin-left: auto; margin-right: auto; }
     footer { margin-top: 24px; font-size: 14px; color: #555; }
     .impressum-link { display: inline-block; margin-top: 20px; font-size: 14px; color: #555; }
+    .score-table { border-collapse: collapse; margin: 10px auto; width: 100%; font-size: 0.9rem; }
+    .score-table th, .score-table td { border: 1px solid #ccc; padding: 6px 8px; text-align: center; background-color: white; }
+    .score-table th { background-color: #e0e0e0; font-weight: bold; }
+    .kniffel-select { width: min(360px, 92%); font-size: 18px; padding: 10px; margin: 6px auto; }
   </style>
 </head>
 <body>
@@ -81,8 +85,8 @@
       <label class="toggle-row">
         <span>Spieltyp</span>
         <select id="gameTypeSelect">
-          <option value="classic">Klassisch</option>
-          <option value="quick">Kurzspiel</option>
+          <option value="schocken">Schocken</option>
+          <option value="kniffel">Kniffel</option>
         </select>
       </label>
 
@@ -121,19 +125,39 @@
     <h2 id="playerDisplay">Am Zug: -</h2>
     <div class="small" id="turnHint"></div>
 
-    <div class="dice-container">
-      <div class="die" id="die0">□</div>
-      <div class="die" id="die1">□</div>
-      <div class="die" id="die2">□</div>
+    <div id="schockenView">
+      <div class="dice-container">
+        <div class="die" id="die0">□</div>
+        <div class="die" id="die1">□</div>
+        <div class="die" id="die2">□</div>
+      </div>
+
+      <button id="rollBtn">Würfeln</button>
+      <button id="endTurnBtn">Zug beenden</button>
+
+      <div id="throwCount">Wurf: 0</div>
+      <div id="roundDisplay" style="margin-top:10px; font-weight:bold;">Runde: 1</div>
+      <div id="result"></div>
+      <div id="historyTable" style="margin-top: 14px;"></div>
     </div>
 
-    <button id="rollBtn">Würfeln</button>
-    <button id="endTurnBtn">Zug beenden</button>
+    <div id="kniffelView" style="display:none;">
+      <div class="dice-container">
+        <div class="die" id="kniffelDie0">□</div>
+        <div class="die" id="kniffelDie1">□</div>
+        <div class="die" id="kniffelDie2">□</div>
+        <div class="die" id="kniffelDie3">□</div>
+        <div class="die" id="kniffelDie4">□</div>
+      </div>
 
-    <div id="throwCount">Wurf: 0</div>
-    <div id="roundDisplay" style="margin-top:10px; font-weight:bold;">Runde: 1</div>
-    <div id="result"></div>
-    <div id="historyTable" style="margin-top: 14px;"></div>
+      <button id="kniffelRollBtn">Würfeln</button>
+      <button id="kniffelEndTurnBtn">Kategorie sichern</button>
+
+      <div id="kniffelThrowCount">Wurf: 0</div>
+      <select id="kniffelCategorySelect" class="kniffel-select"></select>
+      <div id="kniffelResult"></div>
+      <div id="kniffelScoreTable" style="margin-top: 14px;"></div>
+    </div>
 
     <div id="backToLobbyWrap" style="margin-top: 14px;">
       <button id="btnBackToLobby">Zurück zur Lobby</button>
@@ -152,10 +176,21 @@
     const diceSymbols = ['⚀','⚁','⚂','⚃','⚄','⚅'];
     const playerTextColors = ['#e6194b','#4363d8','#f58231','#911eb4','#008080','#f032e6','#bcf60c','#0082c8'];
     const playerBgColors   = ['#ffe5e5','#e5e5ff','#fff5e5','#f5e5ff','#e5f5ff','#ffe5f5','#f5ffe5','#e5ffff'];
-    const gameTypeLabels = {
-      classic: "Klassisch",
-      quick: "Kurzspiel"
-    };
+    const kniffelCategories = [
+      { key: "ones", label: "Einer" },
+      { key: "twos", label: "Zweier" },
+      { key: "threes", label: "Dreier" },
+      { key: "fours", label: "Vierer" },
+      { key: "fives", label: "Fünfer" },
+      { key: "sixes", label: "Sechser" },
+      { key: "threeKind", label: "Dreierpasch" },
+      { key: "fourKind", label: "Viererpasch" },
+      { key: "fullHouse", label: "Full House" },
+      { key: "smallStraight", label: "Kleine Straße" },
+      { key: "largeStraight", label: "Große Straße" },
+      { key: "yahtzee", label: "Kniffel" },
+      { key: "chance", label: "Chance" }
+    ];
 
     let myToken    = localStorage.getItem("schocken_token") || null;
     let myRoomCode = localStorage.getItem("schocken_code") || null;
@@ -173,7 +208,8 @@
       document.getElementById("game").style.display  = (view === "game") ? "block" : "none";
       const title = document.getElementById("pageTitle");
       if (title) {
-        title.textContent = (view === "game" && room && room.code) ? `Schocken (${room.code})` : "Schocken (Lobby)";
+        const gameTitle = (room && room.settings && room.settings.gameType === "kniffel") ? "Kniffel" : "Schocken";
+        title.textContent = (view === "game" && room && room.code) ? `${gameTitle} (${room.code})` : `${gameTitle} (Lobby)`;
       }
     }
     function showLobbyError(msg) {
@@ -205,7 +241,7 @@
       return true;
     }
     function showGameMessage(msg, isError=false) {
-      const el = document.getElementById("result");
+      const el = isKniffelGame() ? document.getElementById("kniffelResult") : document.getElementById("result");
       el.textContent = msg || "";
       el.style.color = isError ? "red" : "black";
     }
@@ -236,6 +272,10 @@
 
     function isMyTurn() {
       return state && mySeat >= 0 && state.currentPlayer === mySeat;
+    }
+
+    function isKniffelGame() {
+      return room && room.settings && room.settings.gameType === "kniffel";
     }
 
     async function notifyMyTurn(playerName) {
@@ -342,7 +382,7 @@
       }
       renderPendingList([]);
       updateDeckelToggleState();
-      updateGameTypeState();
+      updateGameTypeSelectState();
       updateLobbyVisibility();
       const settingsSummary = document.getElementById("roomSettingsSummary");
       if (settingsSummary && room?.settings) {
@@ -405,11 +445,11 @@
       let html = "<h4>Aktive Lobbys</h4>";
       lobbies.forEach(lobby => {
         const host = escapeHtml(lobby.hostName || "Host");
-        const typeLabel = getGameTypeLabel(lobby.gameType);
+        const gameLabel = lobby.gameType === "kniffel" ? "Kniffel" : "Schocken";
         html += `<div class="lobby-item">
           <div>
             <div><strong>${lobby.code}</strong> · ${host}</div>
-            <div class="small muted">${lobby.playerCount} Spieler · ${typeLabel} · ${lobby.useDeckel ? "mit Deckeln" : "ohne Deckel"}</div>
+            <div class="small muted">${lobby.playerCount} Spieler · ${gameLabel}${lobby.gameType === "schocken" ? (lobby.useDeckel ? " · mit Deckeln" : " · ohne Deckel") : ""}</div>
           </div>
           <button data-join="${lobby.code}">Beitreten</button>
         </div>`;
@@ -499,8 +539,115 @@
       document.getElementById("historyTable").innerHTML = html;
     }
 
-    function renderGame() {
+    function renderKniffelScoreTable() {
+      if (!state || !state.scorecard) {
+        document.getElementById("kniffelScoreTable").innerHTML = "";
+        return;
+      }
+      let html = "<h3>Scorecard</h3><table class='score-table'>";
+      html += "<tr><th>Kategorie</th>";
+      state.players.forEach((name, i) => {
+        html += `<th style="color:${playerTextColors[i % playerTextColors.length]};">${escapeHtml(name)}</th>`;
+      });
+      html += "</tr>";
+
+      kniffelCategories.forEach(cat => {
+        html += `<tr><td>${cat.label}</td>`;
+        state.players.forEach((_, pIdx) => {
+          const val = state.scorecard[pIdx]?.[cat.key];
+          html += `<td>${val === null || typeof val === "undefined" ? "-" : val}</td>`;
+        });
+        html += "</tr>";
+      });
+
+      html += "<tr><th>Summe</th>";
+      state.players.forEach((_, pIdx) => {
+        html += `<th>${state.totals?.[pIdx] || 0}</th>`;
+      });
+      html += "</tr></table>";
+      document.getElementById("kniffelScoreTable").innerHTML = html;
+    }
+
+    function renderKniffelCategorySelect(myTurn) {
+      const select = document.getElementById("kniffelCategorySelect");
+      if (!select || !state || !state.scorecard) return;
+      const card = state.scorecard[mySeat] || {};
+      select.innerHTML = "<option value=''>Kategorie wählen…</option>";
+      kniffelCategories.forEach(cat => {
+        const used = card && card[cat.key] !== null && typeof card[cat.key] !== "undefined";
+        const opt = document.createElement("option");
+        opt.value = cat.key;
+        opt.textContent = used ? `${cat.label} (belegt)` : cat.label;
+        opt.disabled = used;
+        select.appendChild(opt);
+      });
+      select.disabled = !myTurn;
+    }
+
+    function updateKniffelEndButton() {
+      const endBtn = document.getElementById("kniffelEndTurnBtn");
+      const select = document.getElementById("kniffelCategorySelect");
+      if (!endBtn || !select || !state) return;
+      const myTurn = isMyTurn();
+      endBtn.disabled = !myTurn || state.throwCount === 0 || state.dice.includes(null) || !select.value || state.finished;
+    }
+
+    function renderKniffelGame() {
       if (!state) return;
+      document.getElementById("schockenView").style.display = "none";
+      document.getElementById("kniffelView").style.display = "block";
+
+      const currentName = state.players[state.currentPlayer] || "-";
+      document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
+      document.getElementById("kniffelThrowCount").textContent = `Wurf: ${state.throwCount}`;
+
+      const colorIdx = state.currentPlayer % playerTextColors.length;
+      document.getElementById("playerDisplay").style.color = playerTextColors[colorIdx];
+      document.body.style.backgroundColor = playerBgColors[colorIdx];
+
+      const myTurn = isMyTurn();
+      for (let i = 0; i < 5; i++) {
+        const el = document.getElementById(`kniffelDie${i}`);
+        const val = state.dice[i];
+        el.textContent = val ? diceSymbols[val - 1] : "□";
+        el.className = "die" + (state.held[i] ? " held" : "") + (!myTurn ? " inactive" : "");
+        el.onclick = () => {
+          if (!myTurn) return;
+          socket.emit("action_toggle", { code: room.code, index: i });
+        };
+      }
+
+      const remaining = state.maxThrowsThisRound - state.throwCount;
+      const allHeld = state.held.every(h => h);
+      const rollBtn = document.getElementById("kniffelRollBtn");
+      rollBtn.textContent = allHeld ? "Alle Würfel gehalten" : `Würfeln (${remaining})`;
+      rollBtn.disabled = !myTurn || allHeld || remaining <= 0 || state.finished;
+
+      renderKniffelCategorySelect(myTurn);
+      updateKniffelEndButton();
+
+      document.getElementById("turnHint").textContent =
+        myTurn ? "Du bist am Zug!" : "Du bist gerade nicht am Zug (Zuschauer-Modus).";
+      document.getElementById("backToLobbyWrap").style.display = isHost ? "block" : "none";
+      updateDeckelToggleState();
+      updateLobbyVisibility();
+
+      const myTurnNow = myTurn;
+      if (myTurnNow && !wasMyTurn) {
+        notifyMyTurn(currentName);
+      }
+      wasMyTurn = myTurnNow;
+
+      const msg = state.message || "";
+      document.getElementById("kniffelResult").textContent = msg;
+
+      renderKniffelScoreTable();
+    }
+
+    function renderSchockenGame() {
+      if (!state) return;
+      document.getElementById("kniffelView").style.display = "none";
+      document.getElementById("schockenView").style.display = "block";
 
       const currentName = state.players[state.currentPlayer] || "-";
       document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
@@ -548,6 +695,15 @@
       if (state.message) showGameMessage(state.message, false);
 
       updateHistoryTable();
+    }
+
+    function renderGame() {
+      if (!state) return;
+      if (isKniffelGame()) {
+        renderKniffelGame();
+      } else {
+        renderSchockenGame();
+      }
     }
 
     // Keepalive: solange die Seite geöffnet ist (bis zu 72h)
@@ -776,12 +932,31 @@
 
     document.getElementById("rollBtn").onclick = () => {
       if (!room) return;
+      if (isKniffelGame()) return;
       socket.emit("action_roll", { code: room.code });
     };
 
     document.getElementById("endTurnBtn").onclick = () => {
       if (!room) return;
+      if (isKniffelGame()) return;
       socket.emit("action_end_turn", { code: room.code });
+    };
+
+    document.getElementById("kniffelRollBtn").onclick = () => {
+      if (!room) return;
+      if (!isKniffelGame()) return;
+      socket.emit("action_roll", { code: room.code });
+    };
+
+    document.getElementById("kniffelEndTurnBtn").onclick = () => {
+      if (!room) return;
+      if (!isKniffelGame()) return;
+      const category = document.getElementById("kniffelCategorySelect").value;
+      socket.emit("action_end_turn", { code: room.code, category });
+    };
+
+    document.getElementById("kniffelCategorySelect").onchange = () => {
+      updateKniffelEndButton();
     };
 
     document.getElementById("btnBackToLobby").onclick = () => {
@@ -830,7 +1005,22 @@
       socket.emit("update_room_settings", {
         code: room.code,
         token: myToken,
-        useDeckel: event.target.checked
+        useDeckel: event.target.checked,
+        gameType: room.settings?.gameType || "schocken"
+      });
+    };
+
+    document.getElementById("gameTypeSelect").onchange = (event) => {
+      if (!room || !myToken) return;
+      if (!isHost || room.status !== "lobby") {
+        event.target.value = room?.settings?.gameType || "schocken";
+        return;
+      }
+      socket.emit("update_room_settings", {
+        code: room.code,
+        token: myToken,
+        useDeckel: room.settings?.useDeckel,
+        gameType: event.target.value
       });
     };
     document.getElementById("gameTypeSelect").onchange = (event) => {
@@ -848,6 +1038,7 @@
 
     window.onload = () => {
       setSuggestedCode();
+      document.getElementById("gameTypeSelect").value = "schocken";
       if (myName) {
         document.getElementById("playerName").value = myName;
       }
@@ -901,10 +1092,20 @@
     function updateDeckelToggleState() {
       const toggle = document.getElementById("deckelToggle");
       if (!toggle) return;
+      const isSchocken = (room?.settings?.gameType || "schocken") === "schocken";
       if (room && room.status === "lobby") {
-        toggle.checked = !!room.settings?.useDeckel;
+        toggle.checked = !!room.settings?.useDeckel && isSchocken;
       }
-      toggle.disabled = !!room && (!isHost || room.status !== "lobby");
+      toggle.disabled = !!room && (!isHost || room.status !== "lobby" || !isSchocken);
+      toggle.parentElement.style.display = isSchocken ? "flex" : "none";
+    }
+
+    function updateGameTypeSelectState() {
+      const select = document.getElementById("gameTypeSelect");
+      if (!select) return;
+      const current = room?.settings?.gameType || "schocken";
+      select.value = current;
+      select.disabled = !!room && (!isHost || room.status !== "lobby");
     }
     function updateGameTypeState() {
       const select = document.getElementById("gameTypeSelect");
