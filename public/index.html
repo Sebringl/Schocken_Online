@@ -29,9 +29,10 @@
     .ok { background: #eaffea; }
     .bad { background: #ffe5e5; }
     .neutral { background: #f0f0f0; }
-    .toggle-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 10px 12px; border: 1px solid #eee; border-radius: 10px; background: #fafafa; }
+    .toggle-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; padding: 10px 12px; border: 1px solid #eee; border-radius: 10px; background: #fafafa; }
     .toggle-row input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
     .toggle-row select { font-size: 16px; padding: 6px 8px; }
+    .deckel-inline { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .code-input-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
     .code-input-row input { flex: 0 0 min(320px, 90%); margin: 6px 0; }
     .text-input { width: min(320px, 90%); }
@@ -57,17 +58,17 @@
 
   <div id="lobby">
     <div id="lobbyCard">
-      <label class="toggle-row">
-        <span>Spieltyp</span>
+      <div class="toggle-row" role="group" aria-label="Spieltyp Einstellungen">
+        <label for="gameTypeSelect">Spieltyp</label>
         <select id="gameTypeSelect">
           <option value="schocken">Schocken</option>
           <option value="kniffel">Yahtzee</option>
         </select>
-      </label>
-      <label class="toggle-row">
-        <input type="checkbox" id="deckelToggle" />
-        <span>Mit Deckeln spielen</span>
-      </label>
+        <label class="deckel-inline" for="deckelToggle">
+          <input type="checkbox" id="deckelToggle" />
+          <span>Mit Deckeln spielen</span>
+        </label>
+      </div>
 
       <hr />
       <div id="rejoinBox" style="display:none;">
