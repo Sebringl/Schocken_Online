@@ -147,7 +147,6 @@
       <div id="throwCount">Wurf: 0</div>
       <div id="roundDisplay" style="margin-top:10px; font-weight:bold;">Runde: 1</div>
       <div id="result"></div>
-      <div id="historyTable" style="margin-top: 14px;"></div>
     </div>
 
     <div id="kniffelView" style="display:none;">
@@ -185,6 +184,8 @@
       <div id="schwimmenResult"></div>
       <div id="schwimmenScores" style="margin-top: 14px;"></div>
     </div>
+
+    <div id="historyTable" style="margin-top: 14px;"></div>
 
     <div id="backToLobbyWrap" style="margin-top: 14px;">
       <button id="btnBackToLobby">Zurück zur Lobby</button>
@@ -543,53 +544,93 @@
     }
 
     function updateHistoryTable() {
+      const historyContainer = document.getElementById("historyTable");
       if (!state || !state.history || !state.history.length) {
-        document.getElementById("historyTable").innerHTML = "";
+        historyContainer.innerHTML = "";
+        historyContainer.style.display = "none";
         return;
       }
+      historyContainer.style.display = "block";
 
       const players = state.players;
       const history = state.history;
-      const useDeckel = !!state.useDeckel;
-      const wins = state.wins || [];
-      const deckelCount = state.deckelCount || [];
-
       let html = "<h3>Spielverlauf</h3><table>";
-      html += "<tr><th rowspan='2'>Runde</th>";
-      players.forEach((name, i) => {
-        let displayName = useDeckel ? `${escapeHtml(name)} (${deckelCount[i] || 0})`
-                                    : ((wins[i] > 0) ? `${escapeHtml(name)} (${wins[i]} 👑)` : escapeHtml(name));
-        html += `<th colspan="2" style="color:${playerTextColors[i % playerTextColors.length]};">${displayName}</th>`;
-      });
-      html += "</tr>";
-
-      html += "<tr>";
-      players.forEach(() => {
-        html += `<th>🎲</th><th>${useDeckel ? "Deckel" : "🔁"}</th>`;
-      });
-      html += "</tr>";
-
-      for (let i = history.length - 1; i >= 0; i--) {
-        const r = history[i];
-        const winnerIndex = getRoundBestPlayerIndex(r);
-
-        html += `<tr><td>${i + 1}</td>`;
-        players.forEach((_, p) => {
-          const entry = r[p];
-          const isWinner = p === winnerIndex && entry;
-          const cls = isWinner ? "winner" : "";
-          if (entry) {
-            html += `<td class="${cls}">${escapeHtml(entry.label)}</td>`;
-            html += `<td class="${cls}">${useDeckel ? (deckelCount[p] || 0) : entry.throws}</td>`;
-          } else {
-            html += `<td>-</td><td>-</td>`;
-          }
+      if (state.gameType === "schwimmen") {
+        html += "<tr><th rowspan='2'>Runde</th>";
+        players.forEach((name, i) => {
+          const isOut = state.eliminated?.[i];
+          const displayName = isOut ? `${escapeHtml(name)} (aus)` : escapeHtml(name);
+          html += `<th colspan="2" style="color:${playerTextColors[i % playerTextColors.length]};">${displayName}</th>`;
         });
         html += "</tr>";
+
+        html += "<tr>";
+        players.forEach(() => {
+          html += "<th>🂠</th><th>❤️</th>";
+        });
+        html += "</tr>";
+
+        for (let i = history.length - 1; i >= 0; i--) {
+          const r = history[i];
+          html += `<tr><td>${i + 1}</td>`;
+          players.forEach((_, p) => {
+            const entry = r[p];
+            if (!entry) {
+              html += "<td>-</td><td>-</td>";
+              return;
+            }
+            const scoreLabel = entry.score === null || typeof entry.score === "undefined" ? "-" : entry.score;
+            let livesLabel = entry.lives ?? "-";
+            if (entry.eliminated) {
+              livesLabel = "aus";
+            } else if (entry.swimming) {
+              livesLabel = "🏊";
+            }
+            html += `<td>${scoreLabel}</td><td>${livesLabel}</td>`;
+          });
+          html += "</tr>";
+        }
+      } else {
+        const useDeckel = !!state.useDeckel;
+        const wins = state.wins || [];
+        const deckelCount = state.deckelCount || [];
+
+        html += "<tr><th rowspan='2'>Runde</th>";
+        players.forEach((name, i) => {
+          let displayName = useDeckel ? `${escapeHtml(name)} (${deckelCount[i] || 0})`
+                                      : ((wins[i] > 0) ? `${escapeHtml(name)} (${wins[i]} 👑)` : escapeHtml(name));
+          html += `<th colspan="2" style="color:${playerTextColors[i % playerTextColors.length]};">${displayName}</th>`;
+        });
+        html += "</tr>";
+
+        html += "<tr>";
+        players.forEach(() => {
+          html += `<th>🎲</th><th>${useDeckel ? "Deckel" : "🔁"}</th>`;
+        });
+        html += "</tr>";
+
+        for (let i = history.length - 1; i >= 0; i--) {
+          const r = history[i];
+          const winnerIndex = getRoundBestPlayerIndex(r);
+
+          html += `<tr><td>${i + 1}</td>`;
+          players.forEach((_, p) => {
+            const entry = r[p];
+            const isWinner = p === winnerIndex && entry;
+            const cls = isWinner ? "winner" : "";
+            if (entry) {
+              html += `<td class="${cls}">${escapeHtml(entry.label)}</td>`;
+              html += `<td class="${cls}">${useDeckel ? (deckelCount[p] || 0) : entry.throws}</td>`;
+            } else {
+              html += `<td>-</td><td>-</td>`;
+            }
+          });
+          html += "</tr>";
+        }
       }
 
       html += "</table>";
-      document.getElementById("historyTable").innerHTML = html;
+      historyContainer.innerHTML = html;
     }
 
     function renderKniffelScoreTable() {
@@ -650,6 +691,8 @@
       document.getElementById("schockenView").style.display = "none";
       document.getElementById("kniffelView").style.display = "block";
       document.getElementById("schwimmenView").style.display = "none";
+      document.getElementById("historyTable").style.display = "none";
+      document.getElementById("historyTable").innerHTML = "";
 
       const currentName = state.players[state.currentPlayer] || "-";
       document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
@@ -825,6 +868,7 @@
       document.getElementById("schwimmenResult").textContent = info;
 
       renderSchwimmenScores();
+      updateHistoryTable();
     }
 
     function renderSchockenGame() {
