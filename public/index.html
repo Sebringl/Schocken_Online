@@ -44,6 +44,19 @@
     .lobby-item button { margin: 0; }
     .muted { opacity: 0.7; }
     .centered { display: block; margin-left: auto; margin-right: auto; }
+    .page-title { margin: 0 0 16px; }
+    .page-title-logo { max-width: min(480px, 90%); height: auto; display: inline-block; }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
     footer { margin-top: 24px; font-size: 14px; color: #555; }
     .impressum-link { display: inline-block; margin-top: 20px; font-size: 14px; color: #555; }
     .score-table { border-collapse: collapse; margin: 10px auto; width: 100%; font-size: 0.8rem; }
@@ -60,7 +73,10 @@
   </style>
 </head>
 <body>
-  <h1 id="pageTitle">Spieleflur (Lobby)</h1>
+  <h1 id="pageTitle" class="page-title">
+    <img class="page-title-logo" src="/icon.png" alt="Spieleflur" />
+    <span id="pageTitleText" class="visually-hidden">Spieleflur (Lobby)</span>
+  </h1>
 
   <div id="lobby">
     <div id="lobbyCard">
@@ -242,11 +258,11 @@
     function setView(view) {
       document.getElementById("lobby").style.display = (view === "lobby") ? "block" : "none";
       document.getElementById("game").style.display  = (view === "game") ? "block" : "none";
-      const title = document.getElementById("pageTitle");
-      if (title) {
+      const titleText = document.getElementById("pageTitleText");
+      if (titleText) {
         const typeKey = room?.settings?.gameType || "schocken";
         const gameTitle = gameTypeLabels[typeKey] || "Schocken";
-        title.textContent = (view === "game" && room && room.code) ? `${gameTitle} (${room.code})` : `${gameTitle} (Lobby)`;
+        titleText.textContent = (view === "game" && room && room.code) ? `${gameTitle} (${room.code})` : `${gameTitle} (Lobby)`;
       }
     }
     function showLobbyError(msg) {
