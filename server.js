@@ -171,23 +171,61 @@ function scoreSchwimmenHand(hand) {
 }
 
 function createSchwimmenState(players) {
-  const deck = createSchwimmenDeck();
-  const hands = players.map(() => deck.splice(0, 3));
-  const tableCards = deck.splice(0, 3);
-  return {
+  const state = {
     gameType: "schwimmen",
     players,
     currentPlayer: 0,
-    deck,
-    hands,
-    tableCards,
+    deck: [],
+    hands: [],
+    tableCards: [],
     passCount: 0,
     knockedBy: null,
     lastTurnsRemaining: null,
     finished: false,
     scores: [],
-    message: ""
+    message: "",
+    roundNumber: 1,
+    lives: players.map(() => 3),
+    eliminated: players.map(() => false),
+    history: []
   };
+  setupSchwimmenRound(state, { resetScores: true });
+  return state;
+}
+
+function getActiveSchwimmenSeats(state) {
+  return state.players
+    .map((_, i) => i)
+    .filter(i => !state.eliminated?.[i]);
+}
+
+function getNextActiveSchwimmenSeat(state, fromSeat) {
+  const total = state.players.length;
+  for (let offset = 1; offset <= total; offset++) {
+    const seat = (fromSeat + offset) % total;
+    if (!state.eliminated?.[seat]) return seat;
+  }
+  return fromSeat;
+}
+
+function setupSchwimmenRound(state, { startingSeat, resetScores = false } = {}) {
+  const deck = createSchwimmenDeck();
+  state.deck = deck;
+  state.hands = state.players.map((_, seat) => {
+    if (state.eliminated?.[seat]) return [];
+    return deck.splice(0, 3);
+  });
+  state.tableCards = deck.splice(0, 3);
+  state.passCount = 0;
+  state.knockedBy = null;
+  state.lastTurnsRemaining = null;
+  state.finished = false;
+  if (resetScores) {
+    state.scores = [];
+  }
+  state.currentPlayer = typeof startingSeat === "number"
+    ? startingSeat
+    : (getActiveSchwimmenSeats(state)[0] ?? 0);
 }
 
 function refreshSchwimmenTable(state) {
@@ -202,19 +240,81 @@ function refreshSchwimmenTable(state) {
 }
 
 function finishSchwimmenRound(state) {
-  state.scores = state.hands.map(hand => scoreSchwimmenHand(hand));
-  const maxScore = Math.max(...state.scores);
-  const winners = state.players.filter((_, i) => state.scores[i] === maxScore);
-  state.finished = true;
-  state.message = `Schwimmen beendet. Gewinner: ${winners.join(", ")} (${maxScore} Punkte).`;
+  const activeSeats = getActiveSchwimmenSeats(state);
+  if (activeSeats.length <= 1) {
+    const winnerSeat = activeSeats[0];
+    state.finished = true;
+    state.message = winnerSeat !== undefined
+      ? `Schwimmen beendet. Gesamtsieger: ${state.players[winnerSeat]}.`
+      : "Schwimmen beendet.";
+    return;
+  }
+
+  state.scores = state.players.map((_, i) => {
+    if (state.eliminated?.[i]) return null;
+    return scoreSchwimmenHand(state.hands[i]);
+  });
+  const activeScores = activeSeats.map(i => state.scores[i]);
+  const maxScore = Math.max(...activeScores);
+  const minScore = Math.min(...activeScores);
+  const winners = activeSeats.filter(i => state.scores[i] === maxScore);
+  const losers = activeSeats.filter(i => state.scores[i] === minScore);
+
+  const eliminatedNow = [];
+  const swimmingNow = [];
+
+  losers.forEach(seat => {
+    if (state.lives[seat] > 0) {
+      state.lives[seat] -= 1;
+      if (state.lives[seat] === 0) {
+        swimmingNow.push(seat);
+      }
+    } else {
+      state.eliminated[seat] = true;
+      eliminatedNow.push(seat);
+    }
+  });
+
+  const winnerNames = winners.map(i => state.players[i]).join(", ");
+  const loserNames = losers.map(i => state.players[i]).join(", ");
+  let message = `Runde ${state.roundNumber} beendet. Gewinner: ${winnerNames} (${maxScore} Punkte). Verlierer: ${loserNames} (${minScore} Punkte).`;
+  if (swimmingNow.length) {
+    message += ` ${swimmingNow.map(i => state.players[i]).join(", ")} schwimmt jetzt.`;
+  }
+  if (eliminatedNow.length) {
+    message += ` ${eliminatedNow.map(i => state.players[i]).join(", ")} geht unter.`;
+  }
+
+  state.message = message;
+  state.history.push(state.players.map((_, i) => ({
+    score: state.scores[i],
+    lives: state.lives[i],
+    eliminated: state.eliminated[i],
+    swimming: state.lives[i] === 0 && !state.eliminated[i]
+  })));
+  state.roundNumber += 1;
+
+  const remaining = getActiveSchwimmenSeats(state);
+  if (remaining.length <= 1) {
+    const winnerSeat = remaining[0];
+    state.finished = true;
+    state.message += winnerSeat !== undefined
+      ? ` Gesamtsieger: ${state.players[winnerSeat]}.`
+      : "";
+    return;
+  }
+
+  const startSeat = getNextActiveSchwimmenSeat(state, state.currentPlayer);
+  setupSchwimmenRound(state, { startingSeat: startSeat });
 }
 
 function endSchwimmenTurn(state, { knocked } = { knocked: false }) {
   if (state.finished) return;
   const currentSeat = state.currentPlayer;
+  const activeSeats = getActiveSchwimmenSeats(state);
   if (knocked && state.knockedBy === null) {
     state.knockedBy = currentSeat;
-    state.lastTurnsRemaining = state.players.length - 1;
+    state.lastTurnsRemaining = activeSeats.length - 1;
   } else if (state.knockedBy !== null && currentSeat !== state.knockedBy) {
     state.lastTurnsRemaining = Math.max(0, (state.lastTurnsRemaining ?? 0) - 1);
     if (state.lastTurnsRemaining <= 0) {
@@ -222,7 +322,7 @@ function endSchwimmenTurn(state, { knocked } = { knocked: false }) {
       return;
     }
   }
-  state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+  state.currentPlayer = getNextActiveSchwimmenSeat(state, currentSeat);
 }
 
 function resetTurn(state) {
@@ -1058,7 +1158,8 @@ io.on("connection", (socket) => {
 
     state.passCount += 1;
     state.message = `${state.players[state.currentPlayer]} passt.`;
-    if (state.passCount >= state.players.length) {
+    const activeCount = getActiveSchwimmenSeats(state).length;
+    if (state.passCount >= activeCount) {
       refreshSchwimmenTable(state);
     }
     endSchwimmenTurn(state);
