@@ -206,6 +206,10 @@
     <div id="skatView" style="display:none;">
       <div class="small muted">Skat (3 Spieler)</div>
       <div id="skatPlayers" class="playerList"></div>
+      <div class="small muted">Stich</div>
+      <div class="card-row" id="skatTrick"></div>
+      <div class="small muted">Deine Karten</div>
+      <div class="card-row" id="skatHand"></div>
       <div id="skatResult" style="margin-top: 10px;"></div>
     </div>
 
@@ -806,8 +810,34 @@
       return `${card.rank}${card.suit}`;
     }
 
+    function formatSkatCard(card) {
+      if (!card) return "🂠";
+      return `${card.rank}${card.suit}`;
+    }
+
     function isRedSuit(card) {
       return card && (card.suit === "♥" || card.suit === "♦");
+    }
+
+    function renderSkatRow(container, cards, { selectable, onSelect, hideCards }) {
+      if (!container) return;
+      container.innerHTML = "";
+      cards.forEach((card, index) => {
+        const el = document.createElement("div");
+        el.className = "card";
+        if (hideCards) {
+          el.textContent = "🂠";
+          el.classList.add("inactive");
+        } else {
+          el.textContent = formatSkatCard(card);
+          if (isRedSuit(card)) el.classList.add("red");
+        }
+        if (!selectable) el.classList.add("inactive");
+        if (selectable && !hideCards) {
+          el.onclick = () => onSelect(index);
+        }
+        container.appendChild(el);
+      });
     }
 
     function renderSchwimmenRow(container, cards, { selectable, selectedIndex, onSelect, hideCards }) {
@@ -952,22 +982,60 @@
       document.getElementById("historyTable").innerHTML = "";
 
       const playerCount = state.players?.length || 0;
-      document.getElementById("playerDisplay").textContent = `Skat · ${playerCount} Spieler`;
+      const currentName = state.players?.[state.currentPlayer] || "-";
+      document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
       document.getElementById("playerDisplay").style.color = "";
       document.body.style.backgroundColor = "";
 
       document.getElementById("turnHint").textContent =
-        "Skat ist vorbereitet. Die Spiel-Logik folgt.";
+        isMyTurn() ? "Du bist am Zug!" : "Du bist gerade nicht am Zug (Zuschauer-Modus).";
       document.getElementById("backToLobbyWrap").style.display = isHost ? "block" : "none";
       updateDeckelToggleState();
       updateLobbyVisibility();
+
+      const myTurnNow = isMyTurn();
+      if (myTurnNow && !wasMyTurn) {
+        notifyMyTurn(currentName);
+      }
+      wasMyTurn = myTurnNow;
 
       const players = state.players || [];
       const playerList = players.length
         ? `<h4>Spieler</h4><ul>${players.map(name => `<li>${escapeHtml(name)}</li>`).join("")}</ul>`
         : "";
       document.getElementById("skatPlayers").innerHTML = playerList;
-      document.getElementById("skatResult").textContent = state.message || "";
+
+      const trickCards = state.currentTrick?.map(play => play.card) || [];
+      renderSkatRow(
+        document.getElementById("skatTrick"),
+        trickCards,
+        {
+          selectable: false,
+          onSelect: () => {},
+          hideCards: false
+        }
+      );
+
+      const myHand = mySeat >= 0 ? (state.hands?.[mySeat] || []) : [];
+      renderSkatRow(
+        document.getElementById("skatHand"),
+        myHand,
+        {
+          selectable: isMyTurn() && !state.finished,
+          onSelect: (index) => {
+            if (!room || !isMyTurn() || state.finished) return;
+            const card = myHand[index];
+            if (!card) return;
+            socket.emit("skat_play_card", { code: room.code, card });
+          },
+          hideCards: false
+        }
+      );
+
+      const status = state.finished
+        ? "Skat beendet."
+        : `Stich ${state.trickNumber} · ${playerCount} Spieler`;
+      document.getElementById("skatResult").textContent = [state.message, status].filter(Boolean).join(" · ");
     }
 
     function renderSchockenGame() {

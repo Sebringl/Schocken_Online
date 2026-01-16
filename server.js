@@ -221,12 +221,58 @@ function createSchwimmenState(players) {
   return state;
 }
 
+function createSkatDeck() {
+  const suits = ["♣", "♠", "♥", "♦"];
+  const ranks = ["7", "8", "9", "10", "J", "Q", "K", "A"];
+  const deck = [];
+  for (const suit of suits) {
+    for (const rank of ranks) {
+      deck.push({ suit, rank });
+    }
+  }
+  return shuffleDeck(deck);
+}
+
+function dealSkatHands(players) {
+  const deck = createSkatDeck();
+  const hands = players.map(() => deck.splice(0, 10));
+  const skat = deck.splice(0, 2);
+  return { hands, skat };
+}
+
+function getSkatRankValue(rank) {
+  const order = ["7", "8", "9", "10", "J", "Q", "K", "A"];
+  return order.indexOf(rank);
+}
+
+function determineSkatTrickWinner(trick, leadSuit) {
+  let bestIndex = 0;
+  let bestValue = -1;
+  trick.forEach((play, index) => {
+    if (!play.card || play.card.suit !== leadSuit) return;
+    const value = getSkatRankValue(play.card.rank);
+    if (value > bestValue) {
+      bestValue = value;
+      bestIndex = index;
+    }
+  });
+  return trick[bestIndex]?.seat ?? trick[0]?.seat ?? 0;
+}
+
 function createSkatState(players) {
+  const { hands, skat } = dealSkatHands(players);
   return {
     gameType: "skat",
     players,
     currentPlayer: 0,
-    message: "Skat ist startklar. Spiel-Logik folgt."
+    hands,
+    skat,
+    currentTrick: [],
+    leadSuit: null,
+    trickNumber: 1,
+    trickWinners: [],
+    finished: false,
+    message: "Skat läuft: Spiele reihum eine Karte aus."
   };
 }
 
@@ -1226,6 +1272,70 @@ io.on("connection", (socket) => {
     persistRooms();
   });
 
+  socket.on("skat_play_card", ({ code, card }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+
+    const state = room.state;
+    if (!state || state.gameType !== "skat") return;
+    if (state.finished) {
+      return socket.emit("error_msg", { message: "Spiel ist beendet." });
+    }
+
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+
+    const suit = String(card?.suit || "");
+    const rank = String(card?.rank || "");
+    if (!suit || !rank) {
+      return socket.emit("error_msg", { message: "Ungültige Karte." });
+    }
+
+    const hand = state.hands[state.currentPlayer] || [];
+    const cardIndex = hand.findIndex(c => c.suit === suit && c.rank === rank);
+    if (cardIndex < 0) {
+      return socket.emit("error_msg", { message: "Karte nicht auf der Hand." });
+    }
+
+    if (state.leadSuit) {
+      const hasLeadSuit = hand.some(c => c.suit === state.leadSuit);
+      if (hasLeadSuit && suit !== state.leadSuit) {
+        return socket.emit("error_msg", { message: "Du musst Farbe bedienen." });
+      }
+    }
+
+    const playedCard = hand.splice(cardIndex, 1)[0];
+    if (!state.leadSuit) {
+      state.leadSuit = playedCard.suit;
+    }
+    state.currentTrick.push({ seat: state.currentPlayer, card: playedCard });
+    state.message = `${state.players[state.currentPlayer]} spielt ${playedCard.rank}${playedCard.suit}.`;
+
+    if (state.currentTrick.length >= 3) {
+      const winnerSeat = determineSkatTrickWinner(state.currentTrick, state.leadSuit);
+      state.trickWinners.push(winnerSeat);
+      state.currentPlayer = winnerSeat;
+      state.currentTrick = [];
+      state.leadSuit = null;
+      state.trickNumber += 1;
+
+      if (state.trickNumber > 10) {
+        state.finished = true;
+        const counts = state.players.map((_, i) => state.trickWinners.filter(seat => seat === i).length);
+        const maxCount = Math.max(...counts);
+        const winners = state.players.filter((_, i) => counts[i] === maxCount);
+        state.message = `Skat beendet. Gewinner: ${winners.join(", ")} (${maxCount} Stiche).`;
+      } else {
+        state.message = `${state.players[winnerSeat]} gewinnt den Stich.`;
+      }
+    } else {
+      state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+    }
+
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
   socket.on("schwimmen_swap", ({ code, handIndex, tableIndex }) => {
     const room = rooms.get(normalizeCode(code));
     if (!room || room.status !== "running") return;
@@ -1477,7 +1587,7 @@ io.on("connection", (socket) => {
       return socket.emit("error_msg", { message: "Diese Aktion ist in Schwimmen nicht verfügbar." });
     }
     if (state.gameType === "skat") {
-      return socket.emit("error_msg", { message: "Skat unterstützt diese Aktion noch nicht." });
+      return socket.emit("error_msg", { message: "Skat nutzt eigene Aktionen." });
     }
 
     if (state.throwCount >= state.maxThrowsThisRound) {
@@ -1520,7 +1630,7 @@ io.on("connection", (socket) => {
       return socket.emit("error_msg", { message: "Diese Aktion ist in Schwimmen nicht verfügbar." });
     }
     if (state.gameType === "skat") {
-      return socket.emit("error_msg", { message: "Skat unterstützt diese Aktion noch nicht." });
+      return socket.emit("error_msg", { message: "Skat nutzt eigene Aktionen." });
     }
 
     if (![0, 1, 2].includes(i)) return;
@@ -1606,7 +1716,7 @@ io.on("connection", (socket) => {
       return socket.emit("error_msg", { message: "Diese Aktion ist in Schwimmen nicht verfügbar." });
     }
     if (state.gameType === "skat") {
-      return socket.emit("error_msg", { message: "Skat unterstützt diese Aktion noch nicht." });
+      return socket.emit("error_msg", { message: "Skat nutzt eigene Aktionen." });
     }
 
     if (state.throwCount === 0 || state.dice.includes(null)) {
