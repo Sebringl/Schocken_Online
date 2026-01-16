@@ -62,6 +62,7 @@ function normalizeRoomGameType(value) {
   if (candidate === "kniffel") return "kniffel";
   if (candidate === "schwimmen") return "schwimmen";
   if (candidate === "skat") return "skat";
+  if (candidate === "cabo") return "cabo";
   return "schocken";
 }
 
@@ -135,6 +136,157 @@ function createKniffelState() {
     message: "",
     finished: false
   };
+}
+
+function createCaboState(players) {
+  const deck = createCaboDeck();
+  const hands = players.map(() => deck.splice(0, 4));
+  const discard = [deck.shift()].filter(Boolean);
+  return {
+    gameType: "cabo",
+    players,
+    currentPlayer: 0,
+    roundNumber: 1,
+    scores: players.map(() => 0),
+    roundScores: players.map(() => null),
+    history: [],
+    deck,
+    discard,
+    hands,
+    initialPeekRemaining: players.map(() => 2),
+    drawnCard: null,
+    actionType: null,
+    caboCaller: null,
+    caboTurnsRemaining: null,
+    message: ""
+  };
+}
+
+function createCaboDeck() {
+  const deck = [];
+  deck.push(0, 0);
+  deck.push(13, 13);
+  for (let value = 1; value <= 12; value++) {
+    for (let i = 0; i < 4; i++) deck.push(value);
+  }
+  return shuffleDeck(deck);
+}
+
+function isCabohActionValue(value) {
+  return [7, 8, 9, 10, 11, 12].includes(value);
+}
+
+function cabohActionType(value) {
+  if ([7, 8].includes(value)) return "peek";
+  if ([9, 10].includes(value)) return "spy";
+  if ([11, 12].includes(value)) return "swap";
+  return null;
+}
+
+function cabohNextPlayer(state) {
+  state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+}
+
+function cabohRoundEnded(state) {
+  return typeof state.caboTurnsRemaining === "number" && state.caboTurnsRemaining <= 0;
+}
+
+function cabohAdvanceAfterTurn(state) {
+  if (typeof state.caboTurnsRemaining === "number") {
+    state.caboTurnsRemaining -= 1;
+  }
+  cabohNextPlayer(state);
+  if (cabohRoundEnded(state)) {
+    cabohFinalizeRound(state);
+  }
+}
+
+function cabohInitialPeekActive(state) {
+  return Array.isArray(state.initialPeekRemaining)
+    && state.initialPeekRemaining.some(count => count > 0);
+}
+
+function cabohSumHand(hand) {
+  return (hand || []).reduce((sum, card) => sum + (Number.isFinite(card) ? card : 0), 0);
+}
+
+function cabohValidateSet(state, indices) {
+  const selections = Array.isArray(indices) ? indices.map(Number) : [];
+  const unique = [...new Set(selections)].filter(idx => Number.isFinite(idx));
+  if (unique.length < 2 || unique.length > 4) return { ok: false };
+  const hand = state.hands?.[state.currentPlayer] || [];
+  const values = unique.map(idx => hand[idx]);
+  if (values.some(value => !Number.isFinite(value))) return { ok: false };
+  const target = values[0];
+  const matches = values.every(value => value === target);
+  if (!matches) return { ok: false };
+  return { ok: true, indices: unique, value: target };
+}
+
+function cabohDrawFromDeck(state) {
+  if (!state.deck || state.deck.length === 0) {
+    state.deck = shuffleDeck(state.discard.splice(0, state.discard.length - 1));
+  }
+  return state.deck.shift();
+}
+
+function cabohFinalizeRound(state) {
+  const roundScores = [];
+  const totals = state.hands.map(hand => cabohSumHand(hand));
+  const caboCaller = state.caboCaller;
+  let kamikazeWinner = null;
+  state.hands.forEach((hand, index) => {
+    const counts = hand.reduce((acc, card) => {
+      if (!Number.isFinite(card)) return acc;
+      acc[card] = (acc[card] || 0) + 1;
+      return acc;
+    }, {});
+    if (counts[12] === 2 && counts[13] === 2) {
+      kamikazeWinner = index;
+    }
+  });
+
+  if (kamikazeWinner !== null) {
+    state.players.forEach((_, index) => {
+      roundScores[index] = index === kamikazeWinner ? 0 : 50;
+    });
+  } else {
+    const minScore = Math.min(...totals);
+    const hasCaller = typeof caboCaller === "number";
+    state.players.forEach((_, index) => {
+      if (hasCaller && index === caboCaller) {
+        const callerScore = totals[index];
+        if (callerScore === minScore) {
+          roundScores[index] = 0;
+        } else {
+          roundScores[index] = callerScore + 5;
+        }
+        return;
+      }
+      if (totals[index] === minScore) {
+        roundScores[index] = 0;
+      } else {
+        roundScores[index] = totals[index];
+      }
+    });
+  }
+
+  state.roundScores = [...roundScores];
+  state.history.push([...roundScores]);
+  state.scores = state.scores.map((total, index) => (total || 0) + roundScores[index]);
+  state.message = "Runde beendet. Punkte wurden eingetragen.";
+
+  const nextDeck = createCaboDeck();
+  state.hands = state.players.map(() => nextDeck.splice(0, 4));
+  state.deck = nextDeck;
+  state.discard = [state.deck.shift()].filter(Boolean);
+  state.drawnCard = null;
+  state.actionType = null;
+  state.caboCaller = null;
+  state.caboTurnsRemaining = null;
+  state.roundNumber += 1;
+  state.initialPeekRemaining = state.players.map(() => 2);
+  state.currentPlayer = 0;
 }
 
 // Fisher-Yates zum Mischen eines Kartenstapels (Schwimmen).
@@ -738,6 +890,8 @@ function startNewGame(room) {
     state.totals = state.players.map(_ => 0);
     state.currentPlayer = 0;
     room.state = state;
+  } else if (room.settings.gameType === "cabo") {
+    room.state = createCaboState(room.players.map(p => p.name));
   } else if (room.settings.gameType === "schwimmen") {
     room.state = createSchwimmenState(room.players.map(p => p.name));
   } else if (room.settings.gameType === "skat") {
@@ -1506,6 +1660,281 @@ io.on("connection", (socket) => {
     persistRooms();
   });
 
+  socket.on("caboh_initial_peek", ({ code, indices }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    const remaining = state.initialPeekRemaining?.[state.currentPlayer] ?? 0;
+    if (remaining <= 0) return socket.emit("error_msg", { message: "Keine Peek-Aktionen mehr übrig." });
+    const selections = Array.isArray(indices) ? indices.map(Number) : [];
+    const unique = [...new Set(selections)].filter(idx => Number.isFinite(idx));
+    if (unique.length === 0 || unique.length > remaining) {
+      return socket.emit("error_msg", { message: "Bitte gültige Karten auswählen." });
+    }
+    const hand = state.hands?.[state.currentPlayer] || [];
+    const invalid = unique.some(idx => idx < 0 || idx >= hand.length);
+    if (invalid) return socket.emit("error_msg", { message: "Ungültige Kartenwahl." });
+    state.message = `Du hast Karten gesehen: ${unique.map(idx => hand[idx]).join(", ")}`;
+    state.initialPeekRemaining[state.currentPlayer] = remaining - unique.length;
+    if (state.initialPeekRemaining[state.currentPlayer] <= 0) {
+      cabohNextPlayer(state);
+      if (state.initialPeekRemaining.every(count => count <= 0)) {
+        state.message = "Kaboh startet!";
+        state.currentPlayer = 0;
+      }
+    }
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_take_discard", ({ code, handIndex }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard !== null) return socket.emit("error_msg", { message: "Du hast bereits gezogen." });
+    const top = state.discard?.[state.discard.length - 1];
+    if (typeof top === "undefined") return socket.emit("error_msg", { message: "Ablagestapel leer." });
+    const idx = Number(handIndex);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= state.hands[state.currentPlayer].length) {
+      return socket.emit("error_msg", { message: "Ungültige Kartenwahl." });
+    }
+    const hand = state.hands[state.currentPlayer];
+    const replaced = hand[idx];
+    hand[idx] = top;
+    state.discard[state.discard.length - 1] = replaced;
+    state.message = `${state.players[state.currentPlayer]} tauscht eine Karte mit dem Ablagestapel.`;
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_draw_deck", ({ code }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard !== null) return socket.emit("error_msg", { message: "Du hast bereits gezogen." });
+    const card = cabohDrawFromDeck(state);
+    if (typeof card === "undefined") return socket.emit("error_msg", { message: "Nachziehstapel leer." });
+    state.drawnCard = card;
+    state.actionType = isCabohActionValue(card) ? cabohActionType(card) : null;
+    state.message = `Gezogene Karte: ${card}`;
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_swap_set_discard", ({ code, indices }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard !== null) return socket.emit("error_msg", { message: "Du hast bereits gezogen." });
+    const top = state.discard?.[state.discard.length - 1];
+    if (typeof top === "undefined") return socket.emit("error_msg", { message: "Ablagestapel leer." });
+    const validation = cabohValidateSet(state, indices);
+    if (!validation.ok) {
+      state.message = "Set passt nicht. Zug verloren.";
+      cabohAdvanceAfterTurn(state);
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
+    const hand = state.hands[state.currentPlayer];
+    const removed = validation.indices.map(idx => hand[idx]);
+    const newCard = state.discard.pop();
+    hand[validation.indices[0]] = newCard;
+    validation.indices.slice(1).forEach(idx => {
+      hand[idx] = null;
+    });
+    state.discard.push(...removed);
+    state.message = "Set mit Ablage getauscht.";
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_swap_set_deck", ({ code, indices }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard !== null) return socket.emit("error_msg", { message: "Du hast bereits gezogen." });
+    const drawn = cabohDrawFromDeck(state);
+    if (typeof drawn === "undefined") return socket.emit("error_msg", { message: "Nachziehstapel leer." });
+    const validation = cabohValidateSet(state, indices);
+    if (!validation.ok) {
+      state.discard.push(drawn);
+      state.message = "Set passt nicht. Zug verloren.";
+      cabohAdvanceAfterTurn(state);
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
+    const hand = state.hands[state.currentPlayer];
+    const removed = validation.indices.map(idx => hand[idx]);
+    hand[validation.indices[0]] = drawn;
+    validation.indices.slice(1).forEach(idx => {
+      hand[idx] = null;
+    });
+    state.discard.push(...removed);
+    state.message = "Set mit Nachziehstapel getauscht.";
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_discard_drawn", ({ code }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard === null) return socket.emit("error_msg", { message: "Keine Karte gezogen." });
+    state.discard.push(state.drawnCard);
+    state.drawnCard = null;
+    state.actionType = null;
+    state.message = "Karte abgeworfen.";
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_swap_drawn", ({ code, handIndex }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard === null) return socket.emit("error_msg", { message: "Keine Karte gezogen." });
+    const idx = Number(handIndex);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= state.hands[state.currentPlayer].length) {
+      return socket.emit("error_msg", { message: "Ungültige Kartenwahl." });
+    }
+    const hand = state.hands[state.currentPlayer];
+    const replaced = hand[idx];
+    hand[idx] = state.drawnCard;
+    state.discard.push(replaced);
+    state.drawnCard = null;
+    state.actionType = null;
+    state.message = "Karte getauscht.";
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_use_action", ({ code, ownIndex, targetSeat, targetIndex }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.drawnCard === null || !state.actionType) {
+      return socket.emit("error_msg", { message: "Keine Aktionskarte gezogen." });
+    }
+    const hand = state.hands[state.currentPlayer];
+    if (state.actionType === "peek") {
+      const idx = Number(ownIndex);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= hand.length) {
+        return socket.emit("error_msg", { message: "Ungültige Kartenwahl." });
+      }
+      state.message = `Peek: Deine Karte ${idx + 1} ist ${hand[idx]}.`;
+    }
+    if (state.actionType === "spy") {
+      const seat = Number(targetSeat);
+      const idx = Number(targetIndex);
+      const targetHand = state.hands?.[seat] || [];
+      if (!Number.isFinite(seat) || seat < 0 || seat >= state.players.length) {
+        return socket.emit("error_msg", { message: "Ungültiger Spieler." });
+      }
+      if (!Number.isFinite(idx) || idx < 0 || idx >= targetHand.length) {
+        return socket.emit("error_msg", { message: "Ungültige Kartenwahl." });
+      }
+      state.message = `Spy: ${state.players[seat]} hat Karte ${idx + 1} = ${targetHand[idx]}.`;
+    }
+    if (state.actionType === "swap") {
+      const seat = Number(targetSeat);
+      const ownIdx = Number(ownIndex);
+      const targetIdx = Number(targetIndex);
+      if (!Number.isFinite(seat) || seat < 0 || seat >= state.players.length) {
+        return socket.emit("error_msg", { message: "Ungültiger Spieler." });
+      }
+      const targetHand = state.hands?.[seat] || [];
+      if (!Number.isFinite(ownIdx) || ownIdx < 0 || ownIdx >= hand.length) {
+        return socket.emit("error_msg", { message: "Ungültige eigene Kartenwahl." });
+      }
+      if (!Number.isFinite(targetIdx) || targetIdx < 0 || targetIdx >= targetHand.length) {
+        return socket.emit("error_msg", { message: "Ungültige Kartenwahl." });
+      }
+      const temp = hand[ownIdx];
+      hand[ownIdx] = targetHand[targetIdx];
+      targetHand[targetIdx] = temp;
+      state.message = "Swap: Karten wurden getauscht.";
+    }
+    state.discard.push(state.drawnCard);
+    state.drawnCard = null;
+    state.actionType = null;
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
+  socket.on("caboh_call", ({ code }) => {
+    const room = rooms.get(normalizeCode(code));
+    if (!room || room.status !== "running") return;
+    const check = canAct(room, socket.id);
+    if (!check.ok) return socket.emit("error_msg", { message: check.error });
+    const state = room.state;
+    if (!state || state.gameType !== "cabo") return;
+    if (cabohInitialPeekActive(state)) {
+      return socket.emit("error_msg", { message: "Bitte zuerst deine Startkarten ansehen." });
+    }
+    if (state.caboCaller !== null) {
+      return socket.emit("error_msg", { message: "Kaboh wurde bereits angesagt." });
+    }
+    state.caboCaller = state.currentPlayer;
+    state.caboTurnsRemaining = state.players.length - 1;
+    state.message = `${state.players[state.currentPlayer]} sagt Kaboh.`;
+    cabohAdvanceAfterTurn(state);
+    io.to(room.code).emit("state_update", state);
+    persistRooms();
+  });
+
   socket.on("leave_room", ({ code, token }) => {
     const room = rooms.get(normalizeCode(code));
     if (!room) return socket.emit("error_msg", { message: "Room-Code nicht gefunden." });
@@ -1589,6 +2018,9 @@ io.on("connection", (socket) => {
     if (state.gameType === "skat") {
       return socket.emit("error_msg", { message: "Skat nutzt eigene Aktionen." });
     }
+    if (state.gameType === "cabo") {
+      return socket.emit("error_msg", { message: "Kaboh nutzt eigene Aktionen." });
+    }
 
     if (state.throwCount >= state.maxThrowsThisRound) {
       return socket.emit("error_msg", { message: "Keine Würfe mehr übrig." });
@@ -1631,6 +2063,9 @@ io.on("connection", (socket) => {
     }
     if (state.gameType === "skat") {
       return socket.emit("error_msg", { message: "Skat nutzt eigene Aktionen." });
+    }
+    if (state.gameType === "cabo") {
+      return socket.emit("error_msg", { message: "Kaboh nutzt eigene Aktionen." });
     }
 
     if (![0, 1, 2].includes(i)) return;
@@ -1717,6 +2152,9 @@ io.on("connection", (socket) => {
     }
     if (state.gameType === "skat") {
       return socket.emit("error_msg", { message: "Skat nutzt eigene Aktionen." });
+    }
+    if (state.gameType === "cabo") {
+      return socket.emit("error_msg", { message: "Kaboh nutzt eigene Aktionen." });
     }
 
     if (state.throwCount === 0 || state.dice.includes(null)) {

@@ -87,6 +87,7 @@
           <option value="kniffel">Yahtzee</option>
           <option value="schwimmen">Schwimmen</option>
           <option value="skat">Skat</option>
+          <option value="cabo">Kaboh</option>
         </select>
         <label class="deckel-inline" for="deckelToggle">
           <input type="checkbox" id="deckelToggle" />
@@ -213,6 +214,39 @@
       <div id="skatResult" style="margin-top: 10px;"></div>
     </div>
 
+    <div id="caboView" style="display:none;">
+      <div class="small muted">Kaboh (Punkteübersicht)</div>
+      <div id="caboRound" style="margin-top: 6px; font-weight: bold;"></div>
+      <div class="small muted">Nachziehstapel: <span id="caboDeckCount">-</span> · Ablage: <span id="caboDiscardTop">-</span></div>
+      <div class="small muted">Gezogene Karte: <span id="caboDrawnCard">-</span></div>
+      <div class="small muted" id="caboPhaseHint"></div>
+      <div class="small muted">Deine Karten</div>
+      <div class="card-row" id="caboHand"></div>
+      <div id="caboTargets" style="margin: 8px 0; display:none;">
+        <div class="small muted">Ziel wählen</div>
+        <select id="caboTargetPlayer" class="kniffel-select"></select>
+        <select id="caboTargetIndex" class="kniffel-select">
+          <option value="0">Karte 1</option>
+          <option value="1">Karte 2</option>
+          <option value="2">Karte 3</option>
+          <option value="3">Karte 4</option>
+        </select>
+      </div>
+      <div id="caboScores" style="margin-top: 14px;"></div>
+      <div class="card-actions">
+        <button id="caboPeekBtn">2 Karten ansehen</button>
+        <button id="caboTakeDiscardBtn">Ablage nehmen</button>
+        <button id="caboDrawDeckBtn">Nachziehen</button>
+        <button id="caboSetSwapDiscardBtn">Set mit Ablage tauschen</button>
+        <button id="caboSetSwapDeckBtn">Set mit Nachziehen tauschen</button>
+        <button id="caboDiscardDrawnBtn">Gezogene abwerfen</button>
+        <button id="caboSwapDrawnBtn">Mit gezogener tauschen</button>
+        <button id="caboUseActionBtn">Aktionskarte nutzen</button>
+        <button id="caboCallBtn">Kaboh sagen</button>
+      </div>
+      <div id="caboResult" style="margin-top: 10px;"></div>
+    </div>
+
     <div id="historyTable" style="margin-top: 14px;"></div>
 
     <div id="backToLobbyWrap" style="margin-top: 14px;">
@@ -222,6 +256,67 @@
   </div>
 
   <footer>
+    <details style="margin: 18px 0; text-align: left;">
+      <summary>Kaboh-Regeln anzeigen</summary>
+      <div class="small" style="margin-top: 10px;">
+        <p><strong>Ziel:</strong> Am Ende die wenigsten Punkte in deiner verdeckten Auslage haben. Du kennst deine Karten nur teilweise.</p>
+        <h4>Vorbereitung</h4>
+        <ol>
+          <li>Jeder bekommt 4 Karten und legt sie verdeckt nebeneinander vor sich.</li>
+          <li>Rest als Nachziehstapel verdeckt in die Mitte.</li>
+          <li>1 Karte aufdecken neben den Nachziehstapel = Start vom Ablagestapel.</li>
+          <li>Jeder darf einmalig 2 seiner 4 Karten ansehen. Danach Karten nicht mehr anschauen und nicht mehr umsortieren (außer per Aktionskarte).</li>
+          <li>Startspieler bestimmen, dann im Uhrzeigersinn.</li>
+        </ol>
+        <h4>Zugablauf (du wählst 1 von 3 Optionen)</h4>
+        <p><strong>Option 1:</strong> Nimm die oberste Karte vom Ablagestapel und tausche sie gegen 1 Karte aus deiner Auslage (oder gegen ein Duett/Triplett/Quartett – siehe unten).</p>
+        <p><strong>Option 2:</strong> Ziehe die oberste Karte vom Nachziehstapel, schau sie an und dann:</p>
+        <ul>
+          <li><strong>(2a)</strong> direkt auf den Ablagestapel werfen oder</li>
+          <li><strong>(2b)</strong> mit 1 Karte aus deiner Auslage tauschen, die ersetzte Karte kommt auf den Ablagestapel oder</li>
+          <li><strong>(2c)</strong> wenn es eine Aktionskarte ist: Aktion ausführen (nur dann!) und die Karte danach auf den Ablagestapel werfen.</li>
+        </ul>
+        <p><strong>Option 3:</strong> Stattdessen „Kaboh“ ansagen (siehe Kaboh-Regel).</p>
+        <h4>Duett / Triplett / Quartett (gleiche Werte „wegtauchen“)</h4>
+        <p>Du darfst 2/3/4 Karten gleichen Wertes aus deiner Auslage gegen genau 1 Karte vom Nachzieh- oder Ablagestapel tauschen (macht deine Auslage kleiner).</p>
+        <ul>
+          <li>Du zeigst die Karten offen allen, legst sie auf den Ablagestapel.</li>
+          <li>Wenn auch nur eine Karte nicht passt: alle vermeintlichen Tauschkarten gehen zurück auf ihre Plätze, die gezogene Karte geht auf den Ablagestapel → Zug verloren.</li>
+        </ul>
+        <h4>Aktionskarten</h4>
+        <ul>
+          <li><strong>Peek:</strong> 1 eigene Karte ansehen.</li>
+          <li><strong>Spy:</strong> 1 Karte bei einem Mitspieler ansehen.</li>
+          <li><strong>Swap:</strong> 1 eigene Karte mit 1 Karte eines Mitspielers tauschen, ohne sie anzusehen.</li>
+        </ul>
+        <p><strong>Wichtig:</strong></p>
+        <ul>
+          <li>Aktionskarten vom Nachziehstapel: entweder sofort ausführen (nur direkt nach dem Ziehen!) und abwerfen oder wie Punktekarten behandeln (einbauen/abwerfen ohne Aktion).</li>
+          <li>Karten vom Ablagestapel oder Karten, die schon ausliegen, zählen nur als Punktekarten, keine Aktionen.</li>
+        </ul>
+        <h4>Kaboh ansagen</h4>
+        <p>Wenn du glaubst, du hast die wenigsten Punkte, kannst du deinen Zug nutzen, um „Kaboh“ zu sagen.</p>
+        <ul>
+          <li>Dann ziehst/legst du in diesem Zug nichts mehr.</li>
+          <li>Danach haben alle anderen genau noch 1 Zug, dann endet die Runde.</li>
+        </ul>
+        <h4>Wertung</h4>
+        <ul>
+          <li>Alle decken auf und addieren ihre Kartenpunkte.</li>
+          <li>Niedrigste Summe gewinnt: 0 Punkte. Alle anderen notieren ihre Summe als Minuspunkte.</li>
+          <li>Wenn der Kaboh-Ansager nicht die niedrigste Summe hat: +5 Strafpunkte (oder mehr nach Vereinbarung).</li>
+          <li>Gleichstand: Kaboh-Ansager gewinnt. Wenn mehrere ohne Kaboh gleich niedrig: alle diese gewinnen und schreiben 0.</li>
+        </ul>
+        <h4>Kamikaze-Sonderregel</h4>
+        <p>Wenn du am Ende 12+12+13+13 hast, gewinnst du sofort (0 Punkte) und alle anderen bekommen 50 Minuspunkte.</p>
+        <h4>Partien über mehrere Runden (optional)</h4>
+        <ul>
+          <li>Minuspunkte über mehrere Partien addieren.</li>
+          <li>Bei &gt;100 Minuspunkten endet’s, niedrigste Gesamtpunkte gewinnen.</li>
+          <li>Exakt 100 → wird auf 50 reduziert.</li>
+        </ul>
+      </div>
+    </details>
     <a class="impressum-link" href="/impressum.html" target="_blank" rel="noopener noreferrer">Impressum</a>
   </footer>
 
@@ -251,13 +346,15 @@
       schocken: "Schocken",
       kniffel: "Yahtzee",
       schwimmen: "Schwimmen",
-      skat: "Skat"
+      skat: "Skat",
+      cabo: "Kaboh"
     };
     const gameTypeRequirements = {
       schocken: { min: 2 },
       kniffel: { min: 2 },
       schwimmen: { min: 2 },
-      skat: { exact: 3 }
+      skat: { exact: 3 },
+      cabo: { min: 2 }
     };
 
     let myToken    = localStorage.getItem("schocken_token") || null;
@@ -272,13 +369,17 @@
     let state = null;
     let selectedHandIndex = null;
     let selectedTableIndex = null;
+    let cabohSelectedHandIndex = null;
+    let cabohPeekSelection = [];
+    let cabohSetSelection = [];
 
     const headerImages = {
       lobby: "/header_Lobby.png",
       schocken: "/header_schocken.png",
       schwimmen: "/header_schwimmen.png",
       kniffel: "/header_yahtzee.png",
-      skat: "/header_Lobby.png"
+      skat: "/header_Lobby.png",
+      cabo: "/header_Lobby.png"
     };
 
     function updateHeader(view) {
@@ -380,10 +481,15 @@
       return room && room.settings && room.settings.gameType === "skat";
     }
 
+    function isCaboGame() {
+      return room && room.settings && room.settings.gameType === "cabo";
+    }
+
     function getGameResultElement() {
       if (isKniffelGame()) return document.getElementById("kniffelResult");
       if (isSchwimmenGame()) return document.getElementById("schwimmenResult");
       if (isSkatGame()) return document.getElementById("skatResult");
+      if (isCaboGame()) return document.getElementById("caboResult");
       return document.getElementById("result");
     }
 
@@ -653,6 +759,23 @@
           });
           html += "</tr>";
         }
+      } else if (state.gameType === "cabo") {
+        html += "<tr><th>Runde</th>";
+        players.forEach((name, i) => {
+          html += `<th style="color:${playerTextColors[i % playerTextColors.length]};">${escapeHtml(name)}</th>`;
+        });
+        html += "</tr>";
+
+        for (let i = history.length - 1; i >= 0; i--) {
+          const r = history[i];
+          html += `<tr><td>${i + 1}</td>`;
+          players.forEach((_, p) => {
+            const entry = r?.[p];
+            const scoreLabel = entry === null || typeof entry === "undefined" ? "-" : entry;
+            html += `<td>${scoreLabel}</td>`;
+          });
+          html += "</tr>";
+        }
       } else {
         const useDeckel = !!state.useDeckel;
         const wins = state.wins || [];
@@ -755,6 +878,7 @@
       document.getElementById("kniffelView").style.display = "block";
       document.getElementById("schwimmenView").style.display = "none";
       document.getElementById("skatView").style.display = "none";
+      document.getElementById("caboView").style.display = "none";
       document.getElementById("historyTable").style.display = "none";
       document.getElementById("historyTable").innerHTML = "";
 
@@ -862,6 +986,29 @@
       });
     }
 
+    function renderCabohRow(container, cards, { selectable, selectedIndices, onSelect, hideCards }) {
+      if (!container) return;
+      container.innerHTML = "";
+      cards.forEach((card, index) => {
+        const el = document.createElement("div");
+        el.className = "card";
+        if (hideCards) {
+          el.textContent = "🂠";
+          el.classList.add("inactive");
+        } else if (card === null || typeof card === "undefined") {
+          el.textContent = "—";
+        } else {
+          el.textContent = card;
+        }
+        if (selectedIndices?.includes(index)) el.classList.add("selected");
+        if (!selectable) el.classList.add("inactive");
+        if (selectable) {
+          el.onclick = () => onSelect(index);
+        }
+        container.appendChild(el);
+      });
+    }
+
     function renderSchwimmenScores() {
       const container = document.getElementById("schwimmenScores");
       if (!container) return;
@@ -884,6 +1031,7 @@
       document.getElementById("schockenView").style.display = "none";
       document.getElementById("schwimmenView").style.display = "block";
       document.getElementById("skatView").style.display = "none";
+      document.getElementById("caboView").style.display = "none";
 
       const currentName = state.players[state.currentPlayer] || "-";
       document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
@@ -978,6 +1126,7 @@
       document.getElementById("schockenView").style.display = "none";
       document.getElementById("schwimmenView").style.display = "none";
       document.getElementById("skatView").style.display = "block";
+      document.getElementById("caboView").style.display = "none";
       document.getElementById("historyTable").style.display = "none";
       document.getElementById("historyTable").innerHTML = "";
 
@@ -1044,6 +1193,7 @@
       document.getElementById("schockenView").style.display = "block";
       document.getElementById("schwimmenView").style.display = "none";
       document.getElementById("skatView").style.display = "none";
+      document.getElementById("caboView").style.display = "none";
 
       const currentName = state.players[state.currentPlayer] || "-";
       document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
@@ -1093,6 +1243,169 @@
       updateHistoryTable();
     }
 
+    function renderCaboScores() {
+      const container = document.getElementById("caboScores");
+      if (!container || !state) return;
+      const scores = state.scores || [];
+      const roundScores = state.roundScores || [];
+      let html = "<table class='score-table'><thead><tr><th>Spieler</th><th>Gesamt</th><th>Runde</th></tr></thead><tbody>";
+      state.players.forEach((name, index) => {
+        const color = playerTextColors[index % playerTextColors.length];
+        const total = Number.isFinite(scores[index]) ? scores[index] : 0;
+        const roundScore = Number.isFinite(roundScores[index]) ? roundScores[index] : "-";
+        html += `<tr><td style="color:${color};">${escapeHtml(name)}</td><td>${total}</td><td>${roundScore}</td></tr>`;
+      });
+      html += "</tbody></table>";
+      container.innerHTML = html;
+    }
+
+    function renderCaboGame() {
+      if (!state) return;
+      document.getElementById("kniffelView").style.display = "none";
+      document.getElementById("schockenView").style.display = "none";
+      document.getElementById("schwimmenView").style.display = "none";
+      document.getElementById("skatView").style.display = "none";
+      document.getElementById("caboView").style.display = "block";
+      document.getElementById("historyTable").style.display = "block";
+
+      const currentName = state.players[state.currentPlayer] || "-";
+      document.getElementById("playerDisplay").textContent = `Am Zug: ${currentName}`;
+      document.getElementById("caboRound").textContent = `Runde: ${state.roundNumber || 1}`;
+      document.getElementById("caboDeckCount").textContent = state.deck?.length ?? "-";
+      const discardTop = state.discard?.[state.discard.length - 1];
+      document.getElementById("caboDiscardTop").textContent = typeof discardTop === "undefined" ? "-" : discardTop;
+      document.getElementById("caboDrawnCard").textContent = state.drawnCard ?? "-";
+
+      const colorIdx = state.currentPlayer % playerTextColors.length;
+      document.getElementById("playerDisplay").style.color = playerTextColors[colorIdx];
+      document.body.style.backgroundColor = playerBgColors[colorIdx];
+
+      const myTurn = isMyTurn();
+      const peekRemaining = state.initialPeekRemaining?.[mySeat] ?? 0;
+      const inPeekPhase = peekRemaining > 0;
+      const drawnCard = state.drawnCard !== null && typeof state.drawnCard !== "undefined";
+      const actionType = state.actionType || null;
+
+      if (!myTurn) {
+        cabohSelectedHandIndex = null;
+        cabohPeekSelection = [];
+        cabohSetSelection = [];
+      }
+      if (drawnCard || inPeekPhase) {
+        cabohSetSelection = [];
+      }
+
+      const myHand = mySeat >= 0 ? (state.hands?.[mySeat] || []) : [];
+      const selectedIndices = inPeekPhase
+        ? cabohPeekSelection
+        : (cabohSetSelection.length ? cabohSetSelection : (cabohSelectedHandIndex === null ? [] : [cabohSelectedHandIndex]));
+      renderCabohRow(
+        document.getElementById("caboHand"),
+        myHand,
+        {
+          selectable: myTurn,
+          selectedIndices,
+          onSelect: (index) => {
+            if (!myTurn) return;
+            if (inPeekPhase) {
+              if (cabohPeekSelection.includes(index)) {
+                cabohPeekSelection = cabohPeekSelection.filter(i => i !== index);
+              } else {
+                cabohPeekSelection = [...cabohPeekSelection, index].slice(0, peekRemaining);
+              }
+              cabohSelectedHandIndex = cabohPeekSelection[cabohPeekSelection.length - 1] ?? null;
+            } else if (drawnCard) {
+              cabohSelectedHandIndex = cabohSelectedHandIndex === index ? null : index;
+            } else {
+              if (cabohSetSelection.includes(index)) {
+                cabohSetSelection = cabohSetSelection.filter(i => i !== index);
+              } else {
+                cabohSetSelection = [...cabohSetSelection, index];
+              }
+              cabohSelectedHandIndex = cabohSetSelection.length === 1 ? cabohSetSelection[0] : null;
+            }
+            renderCaboGame();
+          },
+          hideCards: false
+        }
+      );
+
+      const targetWrap = document.getElementById("caboTargets");
+      const targetPlayer = document.getElementById("caboTargetPlayer");
+      const targetIndex = document.getElementById("caboTargetIndex");
+      if (targetPlayer && targetIndex) {
+        targetPlayer.innerHTML = "";
+        state.players.forEach((name, index) => {
+          if (index === mySeat) return;
+          const opt = document.createElement("option");
+          opt.value = String(index);
+          opt.textContent = name;
+          targetPlayer.appendChild(opt);
+        });
+      }
+      const showTargets = actionType === "spy" || actionType === "swap";
+      targetWrap.style.display = showTargets ? "block" : "none";
+
+      const hintParts = [];
+      if (inPeekPhase) {
+        hintParts.push(`Start: Wähle ${peekRemaining} Karte(n) zum Ansehen.`);
+      } else if (drawnCard) {
+        hintParts.push(actionType ? `Aktionskarte (${actionType}) gezogen.` : "Gezogene Karte wählen.");
+      } else {
+        hintParts.push("Wähle Ablage oder Nachziehen.");
+      }
+      document.getElementById("caboPhaseHint").textContent = hintParts.join(" ");
+
+      const peekBtn = document.getElementById("caboPeekBtn");
+      const takeDiscardBtn = document.getElementById("caboTakeDiscardBtn");
+      const drawDeckBtn = document.getElementById("caboDrawDeckBtn");
+      const setSwapDiscardBtn = document.getElementById("caboSetSwapDiscardBtn");
+      const setSwapDeckBtn = document.getElementById("caboSetSwapDeckBtn");
+      const discardDrawnBtn = document.getElementById("caboDiscardDrawnBtn");
+      const swapDrawnBtn = document.getElementById("caboSwapDrawnBtn");
+      const useActionBtn = document.getElementById("caboUseActionBtn");
+      const callBtn = document.getElementById("caboCallBtn");
+
+      const setSelectionValues = cabohSetSelection.map(index => myHand[index]);
+      const validSetSelection = cabohSetSelection.length >= 2
+        && cabohSetSelection.length <= 4
+        && setSelectionValues.every(value => value !== null && value === setSelectionValues[0]);
+
+      if (peekBtn) peekBtn.disabled = !myTurn || !inPeekPhase || cabohPeekSelection.length === 0;
+      if (takeDiscardBtn) takeDiscardBtn.disabled = !myTurn || inPeekPhase || drawnCard || cabohSelectedHandIndex === null;
+      if (drawDeckBtn) drawDeckBtn.disabled = !myTurn || inPeekPhase || drawnCard;
+      if (setSwapDiscardBtn) setSwapDiscardBtn.disabled = !myTurn || inPeekPhase || drawnCard || !validSetSelection;
+      if (setSwapDeckBtn) setSwapDeckBtn.disabled = !myTurn || inPeekPhase || drawnCard || !validSetSelection;
+      if (discardDrawnBtn) discardDrawnBtn.disabled = !myTurn || !drawnCard;
+      if (swapDrawnBtn) swapDrawnBtn.disabled = !myTurn || !drawnCard || cabohSelectedHandIndex === null;
+      if (useActionBtn) {
+        const needsOwn = actionType === "peek" || actionType === "swap";
+        const needsTarget = actionType === "spy" || actionType === "swap";
+        const hasTarget = targetPlayer && targetPlayer.value !== "";
+        const hasTargetIndex = targetIndex && targetIndex.value !== "";
+        useActionBtn.disabled = !myTurn || !drawnCard || !actionType
+          || (needsOwn && cabohSelectedHandIndex === null)
+          || (needsTarget && (!hasTarget || !hasTargetIndex));
+      }
+      if (callBtn) callBtn.disabled = !myTurn || inPeekPhase || state.caboCaller !== null;
+
+      document.getElementById("turnHint").textContent =
+        myTurn ? "Du bist am Zug!" : "Du bist gerade nicht am Zug (Zuschauer-Modus).";
+      document.getElementById("backToLobbyWrap").style.display = isHost ? "block" : "none";
+      updateDeckelToggleState();
+      updateLobbyVisibility();
+
+      const myTurnNow = myTurn;
+      if (myTurnNow && !wasMyTurn) {
+        notifyMyTurn(currentName);
+      }
+      wasMyTurn = myTurnNow;
+
+      document.getElementById("caboResult").textContent = state.message || "";
+      renderCaboScores();
+      updateHistoryTable();
+    }
+
     function renderGame() {
       if (!state) return;
       if (isKniffelGame()) {
@@ -1101,6 +1414,8 @@
         renderSchwimmenGame();
       } else if (isSkatGame()) {
         renderSkatGame();
+      } else if (isCaboGame()) {
+        renderCaboGame();
       } else {
         renderSchockenGame();
       }
@@ -1399,6 +1714,72 @@
       selectedHandIndex = null;
       selectedTableIndex = null;
       socket.emit("schwimmen_start_round", { code: room.code });
+    };
+
+    document.getElementById("caboPeekBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      if (!cabohPeekSelection.length) return;
+      socket.emit("caboh_initial_peek", { code: room.code, indices: cabohPeekSelection });
+      cabohPeekSelection = [];
+      cabohSelectedHandIndex = null;
+    };
+
+    document.getElementById("caboTakeDiscardBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      if (cabohSelectedHandIndex === null) return;
+      socket.emit("caboh_take_discard", { code: room.code, handIndex: cabohSelectedHandIndex });
+      cabohSelectedHandIndex = null;
+    };
+
+    document.getElementById("caboDrawDeckBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      socket.emit("caboh_draw_deck", { code: room.code });
+    };
+
+    document.getElementById("caboSetSwapDiscardBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      if (cabohSetSelection.length < 2) return;
+      socket.emit("caboh_swap_set_discard", { code: room.code, indices: cabohSetSelection });
+      cabohSetSelection = [];
+      cabohSelectedHandIndex = null;
+    };
+
+    document.getElementById("caboSetSwapDeckBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      if (cabohSetSelection.length < 2) return;
+      socket.emit("caboh_swap_set_deck", { code: room.code, indices: cabohSetSelection });
+      cabohSetSelection = [];
+      cabohSelectedHandIndex = null;
+    };
+
+    document.getElementById("caboDiscardDrawnBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      socket.emit("caboh_discard_drawn", { code: room.code });
+    };
+
+    document.getElementById("caboSwapDrawnBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      if (cabohSelectedHandIndex === null) return;
+      socket.emit("caboh_swap_drawn", { code: room.code, handIndex: cabohSelectedHandIndex });
+      cabohSelectedHandIndex = null;
+    };
+
+    document.getElementById("caboUseActionBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      const targetPlayer = document.getElementById("caboTargetPlayer");
+      const targetIndex = document.getElementById("caboTargetIndex");
+      socket.emit("caboh_use_action", {
+        code: room.code,
+        ownIndex: cabohSelectedHandIndex,
+        targetSeat: targetPlayer ? Number(targetPlayer.value) : null,
+        targetIndex: targetIndex ? Number(targetIndex.value) : null
+      });
+      cabohSelectedHandIndex = null;
+    };
+
+    document.getElementById("caboCallBtn").onclick = () => {
+      if (!room || !isCaboGame()) return;
+      socket.emit("caboh_call", { code: room.code });
     };
 
     document.getElementById("btnBackToLobby").onclick = () => {
