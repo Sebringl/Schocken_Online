@@ -9,12 +9,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html { font-size: 18px; }
-    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; max-width: 760px; margin: auto; transition: background-color 0.2s ease; }
-    .dice-container { display: flex; justify-content: center; gap: 14px; margin: 16px 0; }
-    .die { font-size: 140px; line-height: 140px; cursor: pointer; padding: 10px; border: 2px solid transparent; border-radius: 10px; user-select: none; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: clamp(12px, 2vw, 24px);
+      max-width: 960px;
+      margin: auto;
+      transition: background-color 0.2s ease;
+    }
+    .dice-container { display: flex; justify-content: center; gap: 14px; margin: 16px 0; flex-wrap: wrap; }
+    .die {
+      font-size: clamp(56px, 12vw, 140px);
+      line-height: clamp(56px, 12vw, 140px);
+      cursor: pointer;
+      padding: 10px;
+      border: 2px solid transparent;
+      border-radius: 10px;
+      user-select: none;
+    }
     .die.inactive { color: #9a9a9a; cursor: default; }
     .held { border-color: green; background-color: #eaffea; }
-    button { margin: 8px; font-size: 20px; padding: 12px 18px; }
+    button { margin: 8px; font-size: 20px; padding: 12px 18px; max-width: 100%; }
     input { font-size: 18px; padding: 10px; margin: 6px; width: min(320px, 90%); }
     #result, #throwCount, #playerDisplay { font-size: 18px; margin-top: 10px; transition: color 0.2s ease; }
     #historyTable table { border-collapse: collapse; margin: auto; width: 100%; font-size: 0.9rem; }
@@ -65,7 +80,19 @@
     .kniffel-select { width: min(360px, 92%); font-size: 16px; padding: 8px; margin: 6px auto; }
     #kniffelView .die { font-size: clamp(56px, 14vw, 130px); line-height: clamp(56px, 14vw, 130px); }
     .card-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-    .card { width: 80px; height: 110px; border: 1px solid #ccc; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 28px; background: #fff; cursor: pointer; user-select: none; }
+    .card {
+      width: clamp(70px, 18vw, 90px);
+      height: clamp(95px, 24vw, 130px);
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      background: #fff;
+      cursor: pointer;
+      user-select: none;
+    }
     .card.inactive { cursor: default; opacity: 0.6; }
     .card.selected { border-color: #2e7d32; box-shadow: 0 0 0 2px #a5d6a7; }
     .card.red { color: #c62828; }
@@ -116,6 +143,21 @@
     .kwyx-points th { background: #f1f1f1; }
     .kwyx-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 8px 0 12px; }
     .kwyx-actions .kwyx-action-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+    #historyTable, #kniffelScoreTable, .kwyx-points { overflow-x: auto; }
+    #historyTable table, .score-table, .kwyx-points table { min-width: 520px; }
+
+    @media (max-width: 720px) {
+      body { padding: 12px; }
+      .dice-container { gap: 8px; }
+      .die { padding: 6px; }
+      button { width: min(100%, 320px); }
+      .toggle-row { flex-direction: column; align-items: flex-start; }
+      .deckel-inline { margin-left: 0; }
+      .code-input-row { flex-direction: column; }
+      .lobby-item { flex-direction: column; align-items: flex-start; }
+      .lobby-item button { width: 100%; }
+    }
 
     @media (max-width: 600px) {
       .kwyx-die { font-size: clamp(48px, 12vw, 90px); line-height: clamp(48px, 12vw, 90px); padding: 6px; }
@@ -334,14 +376,17 @@
   <script>
     const socket = io();
 
+    // Darstellungen und Farbschemata für Würfel und Spieler.
     const diceSymbols = ['⚀','⚁','⚂','⚃','⚄','⚅'];
     const playerTextColors = ['#e6194b','#4363d8','#f58231','#911eb4','#008080','#f032e6','#bcf60c','#0082c8'];
     const playerBgColors   = ['#ffe5e5','#e5e5ff','#fff5e5','#f5e5ff','#e5f5ff','#ffe5f5','#f5ffe5','#e5ffff'];
+    // Reihenfolge der Reizwerte im Skat.
     const SKAT_BID_VALUES = [
       18, 20, 22, 23, 24, 27, 30, 33, 35, 36, 40, 44, 45, 46, 48, 50, 54, 55, 59, 60,
       63, 66, 70, 72, 77, 80, 81, 84, 88, 90, 96, 99, 100, 108, 110, 120, 121, 126, 132,
       135, 144, 150, 153, 160, 162, 168, 176, 180, 187, 192, 198, 204, 216, 220, 240, 264
     ];
+    // Anzeigenamen der Kniffel-Kategorien.
     const kniffelCategories = [
       { key: "ones", label: "Einer" },
       { key: "twos", label: "Zweier" },
@@ -357,6 +402,7 @@
       { key: "yahtzee", label: "Yahtzee" },
       { key: "chance", label: "Chance" }
     ];
+    // Kwyx-Farbreihen und deren Labels.
     const kwyxRows = ["red", "yellow", "green", "blue"];
     const kwyxRowLabels = {
       red: "Rot",
@@ -370,6 +416,7 @@
       green: Array.from({ length: 11 }, (_, i) => 12 - i),
       blue: Array.from({ length: 11 }, (_, i) => 12 - i)
     };
+    // Name für jede Spielart (UI-Text).
     const gameTypeLabels = {
       schocken: "Schocken",
       kniffel: "Yahtzee",
@@ -385,6 +432,7 @@
       skat: { exact: 3 }
     };
 
+    // Persistenter Spieler-Kontext (für Rejoin und Komfort).
     let myToken    = localStorage.getItem("schocken_token") || null;
     let myRoomCode = localStorage.getItem("schocken_code") || null;
     let mySeat     = Number(localStorage.getItem("schocken_seat") || "-1");
@@ -404,6 +452,7 @@
     let lastKwyxPlayer = null;
     let kwyxCountdownTimer = null;
 
+    // Headergrafiken je Ansicht.
     const headerImages = {
       lobby: "/header_Lobby.png",
       schocken: "/header_schocken.png",
@@ -413,6 +462,7 @@
       skat: "/header_Lobby.png"
     };
 
+    // Wechselt Logo und Titel je nach Spielansicht.
     function updateHeader(view) {
       const logo = document.getElementById("pageTitleLogo");
       const titleText = document.getElementById("pageTitleText");
@@ -425,14 +475,17 @@
       titleText.textContent = (view === "game" && room && room.code) ? `${gameTitle} (${room.code})` : `${gameTitle} (Lobby)`;
     }
 
+    // Schaltet zwischen Lobby- und Spielansicht.
     function setView(view) {
       document.getElementById("lobby").style.display = (view === "lobby") ? "block" : "none";
       document.getElementById("game").style.display  = (view === "game") ? "block" : "none";
       updateHeader(view);
     }
+    // Zeigt Fehler in der Lobby an.
     function showLobbyError(msg) {
       document.getElementById("lobbyError").textContent = msg || "";
     }
+    // Hinweis für auslaufende Lobby (Inaktivität).
     function showLobbyExpiryNotice(msg) {
       const notice = document.getElementById("lobbyExpiryNotice");
       const text = document.getElementById("lobbyExpiryText");
@@ -448,6 +501,7 @@
     function showJoinStatus(msg) {
       document.getElementById("joinStatus").textContent = msg || "";
     }
+    // Verhindert, dass man versehentlich in eine zweite Lobby springt.
     function canEnterRoom(requestedCode) {
       if (myRoomCode && myToken) {
         const normalized = String(requestedCode || "").trim().toUpperCase();
@@ -458,6 +512,7 @@
       }
       return true;
     }
+    // Gemeinsame Statusausgabe im Spielbereich.
     function showGameMessage(msg, isError=false) {
       const el = getGameResultElement();
       if (!el) return;
@@ -473,18 +528,22 @@
     function setSuggestedCode() {
       document.getElementById("roomCode").value = makeCode();
     }
+    // Name aus dem Eingabefeld lesen.
     function getPlayerName() {
       return document.getElementById("playerName").value.trim();
     }
+    // Namen lokal speichern, damit er beim nächsten Besuch vorausgefüllt ist.
     function storePlayerName(name) {
       myName = name;
       localStorage.setItem("schocken_name", name);
     }
+    // Einfacher HTML-Escaper, damit Benutzereingaben sicher angezeigt werden.
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, m => ({
         "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
       }[m]));
     }
+    // Spieltyp-Label und Anforderungen abfragen.
     function getGameTypeLabel(value) {
       return gameTypeLabels[value] || "Schocken";
     }
@@ -496,6 +555,7 @@
       return gameTypeRequirements[value] || { min: 2 };
     }
 
+    // Prüft, ob der aktuelle Spieler am Zug ist.
     function isMyTurn() {
       return state && mySeat >= 0 && state.currentPlayer === mySeat;
     }
@@ -516,12 +576,32 @@
       return room && room.settings && room.settings.gameType === "skat";
     }
 
+    // Liefert das passende Ergebnis-Element je Spieltyp.
     function getGameResultElement() {
       if (isKniffelGame()) return document.getElementById("kniffelResult");
       if (isKwyxGame()) return document.getElementById("kwyxResult");
       if (isSchwimmenGame()) return document.getElementById("schwimmenResult");
       if (isSkatGame()) return document.getElementById("skatResult");
       return document.getElementById("result");
+    }
+
+    // Einheitliches Rendern von Würfelreihen (Schocken/Yahtzee).
+    function renderDiceGroup({ idPrefix, count, values, held, myTurn, onToggle }) {
+      for (let i = 0; i < count; i++) {
+        const el = document.getElementById(`${idPrefix}${i}`);
+        if (!el) continue;
+        const val = values?.[i];
+        el.textContent = val ? diceSymbols[val - 1] : "□";
+        el.className = "die" + (held?.[i] ? " held" : "") + (!myTurn ? " inactive" : "");
+        if (typeof onToggle === "function") {
+          el.onclick = () => {
+            if (!myTurn) return;
+            onToggle(i);
+          };
+        } else {
+          el.onclick = null;
+        }
+      }
     }
 
     async function notifyMyTurn(playerName) {
@@ -886,6 +966,7 @@
       endBtn.disabled = !myTurn || state.throwCount === 0 || state.dice.includes(null) || !select.value || state.finished;
     }
 
+    // Baut die Kniffel-Ansicht aus dem aktuellen Spielzustand.
     function renderKniffelGame() {
       if (!state) return;
       document.getElementById("schockenView").style.display = "none";
@@ -905,16 +986,14 @@
       document.body.style.backgroundColor = playerBgColors[colorIdx];
 
       const myTurn = isMyTurn();
-      for (let i = 0; i < 5; i++) {
-        const el = document.getElementById(`kniffelDie${i}`);
-        const val = state.dice[i];
-        el.textContent = val ? diceSymbols[val - 1] : "□";
-        el.className = "die" + (state.held[i] ? " held" : "") + (!myTurn ? " inactive" : "");
-        el.onclick = () => {
-          if (!myTurn) return;
-          socket.emit("action_toggle", { code: room.code, index: i });
-        };
-      }
+      renderDiceGroup({
+        idPrefix: "kniffelDie",
+        count: 5,
+        values: state.dice,
+        held: state.held,
+        myTurn,
+        onToggle: (index) => socket.emit("action_toggle", { code: room.code, index })
+      });
 
       const remaining = state.maxThrowsThisRound - state.throwCount;
       const allHeld = state.held.every(h => h);
@@ -942,6 +1021,7 @@
       renderKniffelScoreTable();
     }
 
+    // Berechnet Kwyx-Summen aus den weißen und farbigen Würfeln.
     function getKwyxDiceSums() {
       const whiteA = state?.dice?.[0];
       const whiteB = state?.dice?.[1];
@@ -1654,6 +1734,7 @@
       document.getElementById("skatResult").textContent = [state.message, gameInfo, status].filter(Boolean).join(" · ");
     }
 
+    // Baut die Schocken-Ansicht aus dem aktuellen Spielzustand.
     function renderSchockenGame() {
       if (!state) return;
       document.getElementById("kniffelView").style.display = "none";
@@ -1672,16 +1753,14 @@
       document.body.style.backgroundColor = playerBgColors[colorIdx];
 
       const myTurn = isMyTurn();
-      for (let i = 0; i < 3; i++) {
-        const el = document.getElementById(`die${i}`);
-        const val = state.dice[i];
-        el.textContent = val ? diceSymbols[val - 1] : "□";
-        el.className = "die" + (state.held[i] ? " held" : "") + (!myTurn ? " inactive" : "");
-        el.onclick = () => {
-          if (!myTurn) return;
-          socket.emit("action_toggle", { code: room.code, index: i });
-        };
-      }
+      renderDiceGroup({
+        idPrefix: "die",
+        count: 3,
+        values: state.dice,
+        held: state.held,
+        myTurn,
+        onToggle: (index) => socket.emit("action_toggle", { code: room.code, index })
+      });
 
       const remaining = state.maxThrowsThisRound - state.throwCount;
       const allHeld = state.held.every(h => h);
@@ -1709,6 +1788,7 @@
       updateHistoryTable();
     }
 
+    // Zentraler Einstieg für die Spiel-UI (delegiert je Spieltyp).
     function renderGame() {
       if (!state) return;
       if (isKniffelGame()) {
