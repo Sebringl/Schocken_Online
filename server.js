@@ -62,6 +62,7 @@ function normalizeRoomGameType(value) {
   if (candidate === "kniffel") return "kniffel";
   if (candidate === "schwimmen") return "schwimmen";
   if (candidate === "skat") return "skat";
+  if (candidate === "kwyx") return "kwyx";
   return "schocken";
 }
 
@@ -274,6 +275,104 @@ function createSkatState(players) {
     finished: false,
     message: "Skat läuft: Spiele reihum eine Karte aus."
   };
+}
+
+const KWYX_ROWS = ["red", "yellow", "green", "blue"];
+const KWYX_NUMBERS = {
+  red: Array.from({ length: 11 }, (_, i) => i + 2),
+  yellow: Array.from({ length: 11 }, (_, i) => i + 2),
+  green: Array.from({ length: 11 }, (_, i) => 12 - i),
+  blue: Array.from({ length: 11 }, (_, i) => 12 - i)
+};
+
+function createKwyxCard() {
+  return {
+    red: Array(11).fill(false),
+    yellow: Array(11).fill(false),
+    green: Array(11).fill(false),
+    blue: Array(11).fill(false),
+    locks: {
+      red: false,
+      yellow: false,
+      green: false,
+      blue: false
+    },
+    strikes: 0
+  };
+}
+
+function createKwyxState(players) {
+  return {
+    gameType: "kwyx",
+    players,
+    currentPlayer: 0,
+    dice: [null, null, null, null, null, null],
+    throwCount: 0,
+    maxThrowsThisRound: 1,
+    scorecards: players.map(() => createKwyxCard()),
+    rowLocks: {
+      red: false,
+      yellow: false,
+      green: false,
+      blue: false
+    },
+    totals: players.map(() => 0),
+    finished: false,
+    message: ""
+  };
+}
+
+function getKwyxRowIndex(color, value) {
+  const numbers = KWYX_NUMBERS[color];
+  if (!numbers) return -1;
+  return numbers.indexOf(value);
+}
+
+function countKwyxMarks(row) {
+  return row.reduce((acc, marked) => acc + (marked ? 1 : 0), 0);
+}
+
+function canMarkKwyxRow(state, card, color, value) {
+  if (!KWYX_ROWS.includes(color)) {
+    return { ok: false, error: "Unbekannte Reihe." };
+  }
+  if (state.rowLocks[color]) {
+    return { ok: false, error: "Diese Reihe ist gesperrt." };
+  }
+  const index = getKwyxRowIndex(color, value);
+  if (index < 0) {
+    return { ok: false, error: "Ungültiger Wert." };
+  }
+  const row = card[color];
+  if (row[index]) {
+    return { ok: false, error: "Dieses Feld ist bereits markiert." };
+  }
+  const lastIndex = row.reduce((acc, marked, idx) => (marked ? Math.max(acc, idx) : acc), -1);
+  if (lastIndex >= 0 && index <= lastIndex) {
+    return { ok: false, error: "Du musst weiter rechts markieren." };
+  }
+  const isLastField = index === KWYX_NUMBERS[color].length - 1;
+  if (isLastField) {
+    const marks = countKwyxMarks(row);
+    if (marks < 5) {
+      return { ok: false, error: "Zum Schließen brauchst du mindestens 5 Kreuze." };
+    }
+  }
+  return { ok: true, index, isLastField };
+}
+
+function scoreKwyxCard(card) {
+  const rowScore = color => {
+    const marks = countKwyxMarks(card[color]);
+    const lockBonus = card.locks?.[color] ? 1 : 0;
+    return (marks * (marks + 1)) / 2 + lockBonus;
+  };
+  const totalRows = KWYX_ROWS.reduce((acc, color) => acc + rowScore(color), 0);
+  return totalRows - card.strikes * 5;
+}
+
+function updateKwyxTotals(state) {
+  state.totals = state.scorecards.map(card => scoreKwyxCard(card));
 }
 
 // Aktive (nicht eliminierte) Sitzplätze in Schwimmen.
@@ -742,6 +841,8 @@ function startNewGame(room) {
     room.state = createSchwimmenState(room.players.map(p => p.name));
   } else if (room.settings.gameType === "skat") {
     room.state = createSkatState(room.players.map(p => p.name));
+  } else if (room.settings.gameType === "kwyx") {
+    room.state = createKwyxState(room.players.map(p => p.name));
   } else {
     const state = createInitialState({ useDeckel: room.settings.useDeckel });
     state.players = room.players.map(p => p.name);
@@ -1583,6 +1684,105 @@ io.on("connection", (socket) => {
       persistRooms();
       return;
     }
+    if (state.gameType === "kwyx") {
+      if (state.finished) {
+        return socket.emit("error_msg", { message: "Spiel ist beendet." });
+      }
+      if (state.throwCount >= state.maxThrowsThisRound) {
+        return socket.emit("error_msg", { message: "Du hast bereits gewürfelt." });
+      }
+      state.dice = [rollDie(), rollDie(), rollDie(), rollDie(), rollDie(), rollDie()];
+      state.throwCount = 1;
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
+    if (state.gameType === "kwyx") {
+      if (state.finished) {
+        return socket.emit("error_msg", { message: "Spiel ist beendet." });
+      }
+      if (state.throwCount === 0 || state.dice.includes(null)) {
+        return socket.emit("error_msg", { message: "Bitte zuerst würfeln." });
+      }
+
+      const whiteRow = String(category?.whiteRow || "").trim().toLowerCase();
+      const colorRow = String(category?.colorRow || "").trim().toLowerCase();
+      const colorSum = Number(category?.colorSum);
+      const whiteSum = state.dice[0] + state.dice[1];
+      const colorDice = {
+        red: state.dice[2],
+        yellow: state.dice[3],
+        green: state.dice[4],
+        blue: state.dice[5]
+      };
+      const card = state.scorecards[state.currentPlayer];
+      if (!card) {
+        return socket.emit("error_msg", { message: "Scorekarte fehlt." });
+      }
+
+      const marks = [];
+      if (whiteRow && KWYX_ROWS.includes(whiteRow)) {
+        marks.push({ color: whiteRow, value: whiteSum, source: "white" });
+      }
+      if (colorRow && KWYX_ROWS.includes(colorRow)) {
+        const die = colorDice[colorRow];
+        const possible = [state.dice[0] + die, state.dice[1] + die];
+        if (!Number.isFinite(colorSum) || !possible.includes(colorSum)) {
+          return socket.emit("error_msg", { message: "Ungültige Farb-Summe." });
+        }
+        marks.push({ color: colorRow, value: colorSum, source: "color" });
+      }
+
+      const unique = [];
+      const seen = new Set();
+      for (const mark of marks) {
+        const key = `${mark.color}-${mark.value}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(mark);
+      }
+
+      const applied = [];
+      for (const mark of unique) {
+        const result = canMarkKwyxRow(state, card, mark.color, mark.value);
+        if (!result.ok) {
+          return socket.emit("error_msg", { message: result.error });
+        }
+        card[mark.color][result.index] = true;
+        if (result.isLastField) {
+          card.locks[mark.color] = true;
+          state.rowLocks[mark.color] = true;
+        }
+        applied.push(mark);
+      }
+
+      if (applied.length === 0) {
+        card.strikes += 1;
+        state.message = `${state.players[state.currentPlayer]} streicht einen Fehlwurf (${card.strikes}/4).`;
+      } else {
+        const markText = applied.map(mark => `${mark.color} ${mark.value}`).join(" & ");
+        state.message = `${state.players[state.currentPlayer]} markiert ${markText}.`;
+      }
+
+      updateKwyxTotals(state);
+
+      const lockedRows = KWYX_ROWS.filter(color => state.rowLocks[color]).length;
+      const strikeOut = state.scorecards.some(scorecard => scorecard.strikes >= 4);
+      if (lockedRows >= 2 || strikeOut) {
+        state.finished = true;
+        const maxScore = Math.max(...state.totals);
+        const winners = state.players.filter((_, i) => state.totals[i] === maxScore);
+        state.message = `Kwyx beendet. Gewinner: ${winners.join(", ")} (${maxScore} Punkte).`;
+      } else {
+        state.currentPlayer = (state.currentPlayer + 1) % state.players.length;
+        state.throwCount = 0;
+        state.dice = [null, null, null, null, null, null];
+      }
+
+      io.to(room.code).emit("state_update", state);
+      persistRooms();
+      return;
+    }
     if (state.gameType === "schwimmen") {
       return socket.emit("error_msg", { message: "Diese Aktion ist in Schwimmen nicht verfügbar." });
     }
@@ -1625,6 +1825,9 @@ io.on("connection", (socket) => {
       io.to(room.code).emit("state_update", state);
       persistRooms();
       return;
+    }
+    if (state.gameType === "kwyx") {
+      return socket.emit("error_msg", { message: "Diese Aktion ist in Kwyx nicht verfügbar." });
     }
     if (state.gameType === "schwimmen") {
       return socket.emit("error_msg", { message: "Diese Aktion ist in Schwimmen nicht verfügbar." });
