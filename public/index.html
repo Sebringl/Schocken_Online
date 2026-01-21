@@ -166,6 +166,27 @@
     #historyTable, #kniffelScoreTable, .kwyx-points { overflow-x: auto; }
     #historyTable table, .score-table, .kwyx-points table { min-width: 520px; }
 
+    @media (max-width: 900px) and (pointer: coarse) {
+      .kwyx-cells {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-auto-rows: 1fr;
+        gap: clamp(2px, 0.8vw, 4px);
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100%;
+      }
+      .kwyx-cell {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        border-radius: 5px;
+        min-height: clamp(44px, 12.5vw, 64px);
+        font-size: clamp(14px, 4.5vw, 18px);
+      }
+      .kwyx-cell.lock { font-size: clamp(14px, 4.5vw, 18px); }
+    }
+
     @media (max-width: 720px) {
       body { padding: 12px; }
       .dice-container { gap: 8px; }
@@ -180,6 +201,8 @@
       .kwyx-row-label { width: auto; font-size: 12px; margin-bottom: 4px; }
       .kwyx-row.penalty { flex-direction: column; align-items: stretch; }
       .kwyx-row.penalty .kwyx-row-label { margin-bottom: 4px; }
+      .kwyx-cells { gap: clamp(2px, 1vw, 5px); }
+      .kwyx-cell { min-height: clamp(46px, 13vw, 68px); }
       .kwyx-cells {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(clamp(30px, 12vw, 44px), 1fr));
@@ -193,6 +216,8 @@
 
     @media (max-width: 600px) {
       .kwyx-die { font-size: clamp(48px, 12vw, 90px); line-height: 1; padding: 6px; }
+      .kwyx-cell { font-size: clamp(15px, 4.8vw, 19px); }
+      .kwyx-cell.lock { font-size: clamp(15px, 4.8vw, 19px); }
       .kwyx-cell { font-size: clamp(10px, 3vw, 12px); }
       .kwyx-cell.lock { font-size: clamp(10px, 3vw, 12px); }
       .kwyx-card { margin: 8px 0; }
